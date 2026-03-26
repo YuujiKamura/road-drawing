@@ -11,6 +11,8 @@ pub use app::RoadDrawingApp;
 // WASM entry point
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsCast;
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
@@ -21,9 +23,18 @@ pub fn start() -> Result<(), JsValue> {
 
     let web_options = eframe::WebOptions::default();
     wasm_bindgen_futures::spawn_local(async {
+        // eframe 0.29 requires HtmlCanvasElement, not a string ID
+        let document = web_sys::window().unwrap().document().unwrap();
+        let canvas = document
+            .get_element_by_id("road_drawing_canvas")
+            .expect("canvas element 'road_drawing_canvas' not found");
+        let canvas: web_sys::HtmlCanvasElement = canvas
+            .dyn_into()
+            .expect("element is not a canvas");
+
         let start_result = eframe::WebRunner::new()
             .start(
-                "road_drawing_canvas",
+                canvas,
                 web_options,
                 Box::new(|cc| Ok(Box::new(RoadDrawingApp::new(cc)))),
             )
