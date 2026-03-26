@@ -140,7 +140,12 @@ No.0,0.00,0.80,0.00
 
 ---
 
-## Phase 3: Kotlin区画線ロジックのRust移植 (Issue #2)
+## Phase 3: Kotlin区画線ロジックのRust移植 (Issue #2) ✅ 完了
+
+131テスト全パス (triangle-core 112 + integration 19)。road-marking 44テスト。
+triangle-core: triangle/connection/csv_loader の3モジュール。MIN/CONN/FULL 28列対応。
+road-marking: crosswalk + command の2モジュール。JSON→描画コマンド実行エンジン。
+dxf-engine: reader/index 追加 (228テスト)。Writer出力のラウンドトリップ検証済み。
 
 ### 目的
 trianglelist (Kotlin) の三角形リスト展開図・区画線生成ロジックをRust移植。DXFリーダーも追加。
@@ -222,7 +227,13 @@ FULL (28列): + NAME, POINT位置, COLOR, DIM配置, ANGLE, ...
 
 ---
 
-## Phase 4: Web UI層 — egui WASM (Issue #3)
+## Phase 4: Web UI層 — egui WASM (Issue #3) 🚧 進行中
+
+51テスト全パス。web/ crate作成済み (eframe 0.29, egui 0.29)。
+app.rs: CSV D&D + Shift_JIS自動検出 + road-section プレビュー描画。
+renderer.rs: Viewport座標変換 (DXF Y-up → screen Y-down) + DXFカラーマッピング。
+dxf_export.rs: stations_to_dxf() + カスタムスケール対応 + ラウンドトリップ検証済み。
+残: WASM ビルド (trunk)、GitHub Pages デプロイ、Excel D&D (calamine WASM or SheetJS fallback)。
 
 ### 目的
 ブラウザで Excel D&D → プレビュー → DXFダウンロード。trianglelist-web の egui 骨格を移植。
@@ -374,10 +385,10 @@ web → 全 crate
 
 | Phase | 優先度 | 前提 | 規模感 |
 |-------|--------|------|--------|
-| **2** | ✅ 完了 | Phase 1 | 中 (4モジュール, 32テスト) |
+| **2** | ✅ 完了 | Phase 1 | 中 (4モジュール, 77テスト) |
 | **2.5** | 高 — 未知書式対応 | Phase 2 | 中 (calamine dump + LLM + CLI) |
-| **3** | 高 — trianglelist統合の核 | Phase 1 | 大 (6+ファイル新規, Kotlin移植) |
-| **4** | 中 — あると便利 | Phase 2+3 | 中 (Web, egui経験あり) |
+| **3** | ✅ 完了 | Phase 1 | 大 (triangle-core 112 + road-marking 44 + dxf-engine reader 228テスト) |
+| **4** | 🚧 進行中 | Phase 2+3 | 中 (Web 51テスト, WASM+デプロイ残) |
 | **5** | P3 — 安定後 | Phase 2+3+4 | 小 (依存切替 + publish) |
 
 ---
