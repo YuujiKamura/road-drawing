@@ -6,6 +6,7 @@ members = [
     "crates/triangle-core",
     "crates/road-marking",
     "cli",
+    "web",
 ]
 resolver = "2"
 
