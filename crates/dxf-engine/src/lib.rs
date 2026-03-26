@@ -27,4 +27,6 @@ pub mod dxf;
 pub use dxf::entities::{DxfCircle, DxfLine, DxfLwPolyline, DxfText, HorizontalAlignment, VerticalAlignment};
 pub use dxf::handle::{HandleGenerator, owners};
 pub use dxf::linter::{DxfLinter, LintResult, LintError, LintErrorCode};
+pub use dxf::reader::{DxfDocument, ReaderError, parse_dxf};
+pub use dxf::index::{DxfIndex, BoundingBox};
 pub use dxf::writer::DxfWriter;

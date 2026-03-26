@@ -24,7 +24,9 @@
 
 pub mod entities;
 pub mod handle;
+pub mod index;
 pub mod linter;
+pub mod reader;
 pub mod writer;
 
 // Re-export main types for convenience
