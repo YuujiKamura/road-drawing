@@ -18,3 +18,4 @@ regex = "1"
 
 [dev-dependencies]
 approx = "0.5"
+rust_xlsxwriter = "0.79"
