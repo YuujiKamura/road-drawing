@@ -660,4 +660,211 @@ mod tests {
         assert_eq!(doc.texts.len(), 1);
         assert_eq!(doc.texts[0].text, "Hello");
     }
+
+    // ================================================================
+    // Empty / header-only / malformed entity edge cases
+    // ================================================================
+
+    #[test]
+    fn test_parse_empty_string_returns_error() {
+        // Completely empty input — no ENTITIES section possible
+        assert!(parse_dxf("").is_err());
+    }
+
+    #[test]
+    fn test_parse_newlines_only() {
+        assert!(parse_dxf("\n\n\n\n").is_err());
+    }
+
+    #[test]
+    fn test_parse_whitespace_only() {
+        assert!(parse_dxf("   \n   \n   \n   \n").is_err());
+    }
+
+    #[test]
+    fn test_parse_header_and_tables_no_entities() {
+        let dxf = "\
+0\nSECTION\n2\nHEADER\n\
+9\n$ACADVER\n1\nAC1015\n\
+9\n$INSUNITS\n70\n4\n\
+0\nENDSEC\n\
+0\nSECTION\n2\nTABLES\n0\nENDSEC\n\
+0\nEOF\n";
+        let result = parse_dxf(dxf);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_header_with_all_variables_no_entities() {
+        let dxf = "\
+0\nSECTION\n2\nHEADER\n\
+9\n$ACADVER\n1\nAC1015\n\
+9\n$INSUNITS\n70\n4\n\
+9\n$EXTMIN\n10\n0.0\n20\n0.0\n30\n0.0\n\
+9\n$EXTMAX\n10\n100.0\n20\n100.0\n30\n0.0\n\
+0\nENDSEC\n\
+0\nEOF\n";
+        assert!(parse_dxf(dxf).is_err());
+    }
+
+    #[test]
+    fn test_parse_line_with_non_numeric_coords() {
+        // Group code 10 has non-numeric value — should fall back to 0.0
+        let dxf = "0\nSECTION\n2\nENTITIES\n\
+0\nLINE\n8\n0\n10\nABC\n20\n2.0\n11\n3.0\n21\n4.0\n\
+0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.lines.len(), 1);
+        assert!((doc.lines[0].x1 - 0.0).abs() < 0.001); // fallback
+        assert!((doc.lines[0].y1 - 2.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_text_with_non_numeric_height() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n\
+0\nTEXT\n1\nHello\n40\nBAD\n\
+0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.texts[0].height, 1.0); // fallback to default
+    }
+
+    #[test]
+    fn test_parse_circle_with_non_numeric_radius() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n\
+0\nCIRCLE\n10\n5.0\n20\n5.0\n40\nXYZ\n\
+0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.circles.len(), 1);
+        assert!((doc.circles[0].radius - 1.0).abs() < 0.001); // fallback
+    }
+
+    #[test]
+    fn test_parse_line_entity_with_no_attributes() {
+        // LINE marker immediately followed by ENDSEC — empty entity
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nLINE\n0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.lines.len(), 1);
+        // All coords should be 0 (default)
+        assert!((doc.lines[0].x1).abs() < 0.001);
+        assert!((doc.lines[0].y1).abs() < 0.001);
+        assert!((doc.lines[0].x2).abs() < 0.001);
+        assert!((doc.lines[0].y2).abs() < 0.001);
+        assert_eq!(doc.lines[0].color, 7); // default
+        assert_eq!(doc.lines[0].layer, "0"); // default
+    }
+
+    #[test]
+    fn test_parse_text_entity_with_no_attributes() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nTEXT\n0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.texts.len(), 1);
+        assert_eq!(doc.texts[0].text, "");
+        assert_eq!(doc.texts[0].height, 1.0);
+    }
+
+    #[test]
+    fn test_parse_circle_entity_with_no_attributes() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.circles.len(), 1);
+        assert!((doc.circles[0].radius - 1.0).abs() < 0.001); // default
+    }
+
+    #[test]
+    fn test_parse_lwpolyline_entity_with_no_vertices() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nLWPOLYLINE\n90\n0\n70\n0\n0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.polylines.len(), 1);
+        assert!(doc.polylines[0].vertices.is_empty());
+    }
+
+    #[test]
+    fn test_parse_entities_section_without_endsec() {
+        // ENTITIES section that runs until EOF without ENDSEC
+        let dxf = "0\nSECTION\n2\nENTITIES\n\
+0\nLINE\n10\n1.0\n20\n2.0\n11\n3.0\n21\n4.0\n\
+0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        // LINE should still be parsed (loop breaks on EOF entity type)
+        assert_eq!(doc.lines.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_truncated_dxf_after_entity_marker() {
+        // File ends right after entity type marker with no attributes
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nLINE\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.lines.len(), 1); // empty entity with defaults
+    }
+
+    #[test]
+    fn test_parse_line_with_extra_unknown_group_codes() {
+        // LINE with extra group codes that should be ignored
+        let dxf = "0\nSECTION\n2\nENTITIES\n\
+0\nLINE\n\
+5\nABCD\n\
+330\n1F\n\
+100\nAcDbEntity\n\
+8\nMyLayer\n\
+62\n3\n\
+100\nAcDbLine\n\
+10\n10.0\n20\n20.0\n30\n0.0\n\
+11\n30.0\n21\n40.0\n31\n0.0\n\
+999\nComment line\n\
+0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.lines.len(), 1);
+        assert_eq!(doc.lines[0].layer, "MyLayer");
+        assert_eq!(doc.lines[0].color, 3);
+        assert!((doc.lines[0].x1 - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_multiple_entity_types_interleaved() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n\
+0\nLINE\n10\n0.0\n20\n0.0\n11\n1.0\n21\n1.0\n\
+0\nCIRCLE\n10\n5.0\n20\n5.0\n40\n3.0\n\
+0\nTEXT\n10\n10.0\n20\n10.0\n1\nLabel\n\
+0\nLWPOLYLINE\n90\n2\n70\n1\n10\n0.0\n20\n0.0\n10\n10.0\n20\n10.0\n\
+0\nLINE\n10\n100.0\n20\n100.0\n11\n200.0\n21\n200.0\n\
+0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.lines.len(), 2);
+        assert_eq!(doc.circles.len(), 1);
+        assert_eq!(doc.texts.len(), 1);
+        assert_eq!(doc.polylines.len(), 1);
+        assert!(doc.polylines[0].closed);
+    }
+
+    #[test]
+    fn test_parse_text_with_special_characters() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n\
+0\nTEXT\n1\nNo.1+5 (左側)\n\
+0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.texts[0].text, "No.1+5 (左側)");
+    }
+
+    #[test]
+    fn test_parse_line_with_scientific_notation_coords() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n\
+0\nLINE\n10\n1.5e3\n20\n2.5e3\n11\n3.5e3\n21\n4.5e3\n\
+0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert!((doc.lines[0].x1 - 1500.0).abs() < 0.001);
+        assert!((doc.lines[0].y1 - 2500.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_entities_section_appears_after_other_sections() {
+        let dxf = "\
+0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1015\n0\nENDSEC\n\
+0\nSECTION\n2\nTABLES\n0\nENDSEC\n\
+0\nSECTION\n2\nBLOCKS\n0\nENDSEC\n\
+0\nSECTION\n2\nENTITIES\n\
+0\nLINE\n10\n1.0\n20\n2.0\n11\n3.0\n21\n4.0\n\
+0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.lines.len(), 1);
+    }
 }
