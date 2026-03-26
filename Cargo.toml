@@ -1,0 +1,13 @@
+[workspace]
+members = [
+    "crates/dxf-engine",
+    "crates/road-section",
+    "cli",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+authors = ["YuujiKamura"]
+repository = "https://github.com/YuujiKamura/road-drawing"
