@@ -107,4 +107,83 @@ No.0,0,0.8,,
         assert!((round_n(3.454, 2) - 3.45).abs() < 1e-9);
         assert!((round_n(0.005, 2) - 0.01).abs() < 1e-9);
     }
+
+    // ================================================================
+    // round_n additional cases
+    // ================================================================
+
+    #[test]
+    fn test_round_n_zero() {
+        assert!((round_n(0.0, 2) - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_round_n_negative() {
+        assert!((round_n(-3.456, 2) - (-3.46)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_round_n_zero_decimals() {
+        assert!((round_n(3.7, 0) - 4.0).abs() < 1e-9);
+    }
+
+    // ================================================================
+    // transform_section pipeline
+    // ================================================================
+
+    #[test]
+    fn test_transform_section_rounding() {
+        let mut rows = vec![
+            RawRow { name: "No.0".into(), x: 0.0, wl: 1.234567, wr: 2.999 },
+        ];
+        transform_section(&mut rows);
+        assert!((rows[0].wl - 1.23).abs() < 1e-9, "Should round to 2 decimals");
+        assert!((rows[0].wr - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_transform_section_fills_names() {
+        let mut rows = vec![
+            RawRow { name: "".into(), x: 0.0, wl: 1.0, wr: 1.0 },
+            RawRow { name: "".into(), x: 10.0, wl: 1.0, wr: 1.0 },
+        ];
+        transform_section(&mut rows);
+        assert_eq!(rows[0].name, "No.0");
+        assert_eq!(rows[1].name, "0+10");
+    }
+
+    // ================================================================
+    // extract_and_transform_text end-to-end
+    // ================================================================
+
+    #[test]
+    fn test_extract_and_transform_text_empty() {
+        let result = extract_and_transform_text("", "区間1");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_and_transform_text_basic() {
+        let text = "name,x,wl,wr\nNo.0,0.0,2.5,3.5\nNo.1,20.0,2.5,3.5\n";
+        let rows = extract_and_transform_text(text, "区間1").unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].name, "No.0");
+        assert_eq!(rows[1].name, "No.1");
+    }
+
+    // ================================================================
+    // list_sections_text
+    // ================================================================
+
+    #[test]
+    fn test_list_sections_text_fallback() {
+        let sections = list_sections_text("no sections here", "random.csv");
+        assert_eq!(sections, vec!["区間1"]);
+    }
+
+    #[test]
+    fn test_list_sections_text_from_filename() {
+        let sections = list_sections_text("", "区間3.csv");
+        assert_eq!(sections, vec!["区間3"]);
+    }
 }

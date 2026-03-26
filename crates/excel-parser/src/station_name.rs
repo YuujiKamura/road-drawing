@@ -256,4 +256,110 @@ mod tests {
         fill_station_names(&mut rows);
         assert_eq!(rows[0].name, "No.0");
     }
+
+    // ================================================================
+    // parse_station_name edge cases
+    // ================================================================
+
+    #[test]
+    fn test_parse_bare_number() {
+        // "0" → main=0, sub=0
+        assert_eq!(parse_station_name("0"), Some((0, 0.0)));
+    }
+
+    #[test]
+    fn test_parse_large_main() {
+        assert_eq!(parse_station_name("No.100"), Some((100, 0.0)));
+    }
+
+    #[test]
+    fn test_parse_sub_decimal() {
+        assert_eq!(parse_station_name("2+15.5"), Some((2, 15.5)));
+    }
+
+    #[test]
+    fn test_parse_negative_not_supported() {
+        // Negative numbers not in regex
+        assert_eq!(parse_station_name("-1"), None);
+        assert_eq!(parse_station_name("No.-1"), None);
+    }
+
+    // ================================================================
+    // name_from_distance edge cases
+    // ================================================================
+
+    #[test]
+    fn test_name_from_distance_at_pitch_boundary() {
+        // Exactly at 20m boundary
+        assert_eq!(name_from_distance(20.0), "No.1");
+        assert_eq!(name_from_distance(60.0), "No.3");
+    }
+
+    #[test]
+    fn test_name_from_distance_just_below_boundary() {
+        // 19.9m → 0+19.9
+        let name = name_from_distance(19.9);
+        assert_eq!(name, "0+19.9");
+    }
+
+    #[test]
+    fn test_name_from_distance_sub_integer() {
+        // 5.0 → "0+5" (no decimal)
+        assert_eq!(name_from_distance(5.0), "0+5");
+    }
+
+    #[test]
+    fn test_name_from_distance_large() {
+        assert_eq!(name_from_distance(200.0), "No.10");
+        assert_eq!(name_from_distance(205.0), "10+5");
+    }
+
+    // ================================================================
+    // fill_station_names_pairs: all empty
+    // ================================================================
+
+    #[test]
+    fn test_fill_all_empty_non_zero_x() {
+        let rows = vec![
+            ("".to_string(), 5.0),
+            ("".to_string(), 10.0),
+            ("".to_string(), 15.0),
+        ];
+        let names = fill_station_names_pairs(&rows);
+        // x=5 → offset=0 → name_from_distance(5) = "0+5"
+        assert_eq!(names[0], "0+5");
+        assert_eq!(names[1], "0+10");
+        assert_eq!(names[2], "0+15");
+    }
+
+    // ================================================================
+    // fill_station_names_pairs: single row
+    // ================================================================
+
+    #[test]
+    fn test_fill_single_row_with_name() {
+        let rows = vec![("No.3".to_string(), 0.0)];
+        let names = fill_station_names_pairs(&rows);
+        assert_eq!(names[0], "No.3");
+    }
+
+    #[test]
+    fn test_fill_single_row_empty() {
+        let rows = vec![("".to_string(), 0.0)];
+        let names = fill_station_names_pairs(&rows);
+        assert_eq!(names[0], "No.0");
+    }
+
+    // ================================================================
+    // Normalize bare number to No. prefix
+    // ================================================================
+
+    #[test]
+    fn test_fill_normalizes_bare_number() {
+        let rows = vec![
+            ("3".to_string(), 0.0),  // main=3, sub=0, should become "No.3"
+        ];
+        let names = fill_station_names_pairs(&rows);
+        assert_eq!(names[0], "No.3");
+    }
 }

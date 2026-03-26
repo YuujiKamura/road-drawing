@@ -391,4 +391,234 @@ mod tests {
         let result = execute_command(&cmd, &[]);
         assert!(result.lines.is_empty());
     }
+
+    // ================================================================
+    // Malformed JSON variants
+    // ================================================================
+
+    #[test]
+    fn test_parse_command_truncated_json() {
+        assert!(parse_command(r#"{"type": "cross"#).is_none());
+    }
+
+    #[test]
+    fn test_parse_command_missing_closing_brace() {
+        assert!(parse_command(r#"{"type": "crosswalk", "params": {"a": "b"}"#).is_some());
+        // The outer brace isn't needed for extract_json_value to find "type"
+    }
+
+    #[test]
+    fn test_parse_command_no_type_value() {
+        // "type" key exists but value is empty
+        assert!(parse_command(r#"{"type": ""}"#).is_none());
+    }
+
+    #[test]
+    fn test_parse_command_type_not_string() {
+        // "type" value is not in quotes — manual parser won't find it
+        assert!(parse_command(r#"{"type": 42}"#).is_none());
+    }
+
+    #[test]
+    fn test_parse_command_nested_braces_in_params() {
+        // Params with nested structure — should still extract top-level params
+        let json = r#"{"type": "crosswalk", "params": {"startOffset": "5000", "layer": "テスト"}}"#;
+        let cmd = parse_command(json).unwrap();
+        assert_eq!(cmd.params.get("startOffset"), Some(&"5000".to_string()));
+        assert_eq!(cmd.params.get("layer"), Some(&"テスト".to_string()));
+    }
+
+    #[test]
+    fn test_parse_command_extra_whitespace() {
+        let json = r#"  {  "type"  :  "crosswalk"  ,  "params"  :  {  "startOffset"  :  "1000"  }  }  "#;
+        let cmd = parse_command(json).unwrap();
+        assert_eq!(cmd.command_type, "crosswalk");
+        assert_eq!(cmd.params.get("startOffset"), Some(&"1000".to_string()));
+    }
+
+    // ================================================================
+    // Missing required params — defaults should apply
+    // ================================================================
+
+    #[test]
+    fn test_execute_crosswalk_missing_all_params() {
+        let centerlines = vec![DxfLine::new(0.0, 0.0, 20000.0, 0.0)];
+        let cmd = MarkingCommand {
+            command_type: "crosswalk".to_string(),
+            params: HashMap::new(), // all defaults
+        };
+        let result = execute_command(&cmd, &centerlines);
+        // Default: 7 stripes × 4 lines = 28
+        assert_eq!(result.lines.len(), 28);
+    }
+
+    #[test]
+    fn test_execute_crosswalk_partial_params() {
+        let centerlines = vec![DxfLine::new(0.0, 0.0, 20000.0, 0.0)];
+        let cmd = MarkingCommand {
+            command_type: "crosswalk".to_string(),
+            params: [("stripeCount".to_string(), "3".to_string())].into_iter().collect(),
+        };
+        let result = execute_command(&cmd, &centerlines);
+        assert_eq!(result.lines.len(), 12, "3 stripes × 4 = 12");
+    }
+
+    #[test]
+    fn test_execute_crosswalk_invalid_param_value() {
+        let centerlines = vec![DxfLine::new(0.0, 0.0, 20000.0, 0.0)];
+        let cmd = MarkingCommand {
+            command_type: "crosswalk".to_string(),
+            params: [("stripeCount".to_string(), "abc".to_string())].into_iter().collect(),
+        };
+        let result = execute_command(&cmd, &centerlines);
+        // "abc" can't parse as f64 → falls back to default 7
+        assert_eq!(result.lines.len(), 28);
+    }
+
+    // ================================================================
+    // Unknown command type
+    // ================================================================
+
+    #[test]
+    fn test_execute_stopline_unknown() {
+        let cmd = MarkingCommand {
+            command_type: "stopline".to_string(),
+            params: HashMap::new(),
+        };
+        let result = execute_command(&cmd, &[]);
+        assert!(result.lines.is_empty());
+        assert!(result.message.contains("stopline"));
+    }
+
+    #[test]
+    fn test_execute_empty_type() {
+        // This shouldn't happen if parse_command filters empty types,
+        // but test execute_command robustness
+        let cmd = MarkingCommand {
+            command_type: "".to_string(),
+            params: HashMap::new(),
+        };
+        let result = execute_command(&cmd, &[]);
+        assert!(result.lines.is_empty());
+    }
+
+    // ================================================================
+    // Command list edge cases
+    // ================================================================
+
+    #[test]
+    fn test_parse_command_list_no_commands_key() {
+        let cmds = parse_command_list(r#"{"data": [{"type": "crosswalk"}]}"#);
+        assert!(cmds.is_empty(), "Missing 'commands' key should return empty");
+    }
+
+    #[test]
+    fn test_parse_command_list_single_command() {
+        let json = r#"{"commands": [{"type": "crosswalk", "params": {"stripeCount": "5"}}]}"#;
+        let cmds = parse_command_list(json);
+        assert_eq!(cmds.len(), 1);
+        assert_eq!(cmds[0].command_type, "crosswalk");
+        assert_eq!(cmds[0].params.get("stripeCount"), Some(&"5".to_string()));
+    }
+
+    #[test]
+    fn test_parse_command_list_mixed_valid_invalid() {
+        let json = r#"{"commands": [
+            {"type": "crosswalk", "params": {"startOffset": "1000"}},
+            {"invalid": "no type here"},
+            {"type": "stopline", "params": {}}
+        ]}"#;
+        let cmds = parse_command_list(json);
+        // First and third are valid, second has no "type" → skipped
+        assert_eq!(cmds.len(), 2);
+        assert_eq!(cmds[0].command_type, "crosswalk");
+        assert_eq!(cmds[1].command_type, "stopline");
+    }
+
+    #[test]
+    fn test_parse_command_list_empty_string() {
+        assert!(parse_command_list("").is_empty());
+    }
+
+    #[test]
+    fn test_parse_command_list_commands_not_array() {
+        let cmds = parse_command_list(r#"{"commands": "not an array"}"#);
+        assert!(cmds.is_empty());
+    }
+
+    // ================================================================
+    // param_f64 edge cases via execute
+    // ================================================================
+
+    #[test]
+    fn test_execute_crosswalk_zero_stripe_count() {
+        let centerlines = vec![DxfLine::new(0.0, 0.0, 20000.0, 0.0)];
+        let cmd = MarkingCommand {
+            command_type: "crosswalk".to_string(),
+            params: [("stripeCount".to_string(), "0".to_string())].into_iter().collect(),
+        };
+        let result = execute_command(&cmd, &centerlines);
+        assert!(result.lines.is_empty(), "stripeCount=0 should produce no lines");
+    }
+
+    #[test]
+    fn test_execute_crosswalk_custom_layer() {
+        let centerlines = vec![DxfLine::new(0.0, 0.0, 20000.0, 0.0)];
+        let cmd = MarkingCommand {
+            command_type: "crosswalk".to_string(),
+            params: [
+                ("stripeCount".to_string(), "1".to_string()),
+                ("layer".to_string(), "カスタム層".to_string()),
+            ].into_iter().collect(),
+        };
+        let result = execute_command(&cmd, &centerlines);
+        assert_eq!(result.lines.len(), 4);
+        assert!(result.lines.iter().all(|l| l.layer == "カスタム層"));
+    }
+
+    // ================================================================
+    // CommandResult message content
+    // ================================================================
+
+    #[test]
+    fn test_execute_crosswalk_result_message() {
+        let centerlines = vec![DxfLine::new(0.0, 0.0, 20000.0, 0.0)];
+        let cmd = MarkingCommand {
+            command_type: "crosswalk".to_string(),
+            params: [("stripeCount".to_string(), "3".to_string())].into_iter().collect(),
+        };
+        let result = execute_command(&cmd, &centerlines);
+        assert!(result.message.contains("12"), "Message should contain line count: {}", result.message);
+        assert!(result.texts.is_empty(), "Crosswalk should produce no texts");
+    }
+
+    // ================================================================
+    // MarkingCommand equality
+    // ================================================================
+
+    #[test]
+    fn test_marking_command_equality() {
+        let cmd1 = MarkingCommand {
+            command_type: "crosswalk".to_string(),
+            params: [("a".to_string(), "1".to_string())].into_iter().collect(),
+        };
+        let cmd2 = MarkingCommand {
+            command_type: "crosswalk".to_string(),
+            params: [("a".to_string(), "1".to_string())].into_iter().collect(),
+        };
+        assert_eq!(cmd1, cmd2);
+    }
+
+    #[test]
+    fn test_marking_command_inequality() {
+        let cmd1 = MarkingCommand {
+            command_type: "crosswalk".to_string(),
+            params: HashMap::new(),
+        };
+        let cmd2 = MarkingCommand {
+            command_type: "stopline".to_string(),
+            params: HashMap::new(),
+        };
+        assert_ne!(cmd1, cmd2);
+    }
 }

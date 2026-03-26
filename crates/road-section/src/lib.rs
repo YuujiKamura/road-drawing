@@ -407,4 +407,283 @@ mod tests {
             assert_eq!(text.color, 5);
         }
     }
+
+    // ================================================================
+    // Empty stations
+    // ================================================================
+
+    #[test]
+    fn test_calculate_empty_stations() {
+        let config = RoadSectionConfig::default();
+        let geometry = calculate_road_section(&[], &config);
+        assert!(geometry.lines.is_empty());
+        assert!(geometry.texts.is_empty());
+    }
+
+    // ================================================================
+    // Single station — no connecting lines
+    // ================================================================
+
+    #[test]
+    fn test_calculate_single_station() {
+        let stations = vec![StationData::new("No.0", 0.0, 3.0, 2.5)];
+        let config = RoadSectionConfig::default();
+        let geometry = calculate_road_section(&stations, &config);
+
+        // Single station: 2 width lines (left + right), station name, width dims
+        assert_eq!(geometry.lines.len(), 2, "Single station = 2 width lines");
+        // Texts: left width dim + right width dim + station name = 3
+        assert!(geometry.texts.len() >= 2, "Should have width dims and station name");
+    }
+
+    // ================================================================
+    // Many stations
+    // ================================================================
+
+    #[test]
+    fn test_calculate_many_stations() {
+        let stations: Vec<StationData> = (0..10)
+            .map(|i| StationData::new(&format!("No.{}", i), i as f64 * 10.0, 2.5, 2.5))
+            .collect();
+        let config = RoadSectionConfig::default();
+        let geometry = calculate_road_section(&stations, &config);
+        assert!(!geometry.lines.is_empty());
+        // Each pair of consecutive stations adds: center, top, bottom connecting lines
+        // Plus 2 width lines per station
+    }
+
+    // ================================================================
+    // Zero width (one side only)
+    // ================================================================
+
+    #[test]
+    fn test_calculate_zero_left_width() {
+        let stations = vec![
+            StationData::new("No.0", 0.0, 0.0, 3.0),
+            StationData::new("No.1", 10.0, 0.0, 3.0),
+        ];
+        let config = RoadSectionConfig::default();
+        let geometry = calculate_road_section(&stations, &config);
+        // Left width is 0 → left width line still drawn (center to center)
+        // No left width dimension text (wl == 0)
+        let left_dims: Vec<_> = geometry.texts.iter()
+            .filter(|t| t.text.parse::<f64>().is_ok() && t.y > 0.0)
+            .collect();
+        // When wl=0, the left dimension text should NOT be generated
+        assert!(left_dims.is_empty(), "Zero left width should produce no left dim text");
+    }
+
+    #[test]
+    fn test_calculate_zero_right_width() {
+        let stations = vec![
+            StationData::new("No.0", 0.0, 3.0, 0.0),
+            StationData::new("No.1", 10.0, 3.0, 0.0),
+        ];
+        let config = RoadSectionConfig::default();
+        let geometry = calculate_road_section(&stations, &config);
+        let right_dims: Vec<_> = geometry.texts.iter()
+            .filter(|t| t.text.parse::<f64>().is_ok() && t.y < 0.0)
+            .collect();
+        assert!(right_dims.is_empty(), "Zero right width should produce no right dim text");
+    }
+
+    // ================================================================
+    // Asymmetric widths
+    // ================================================================
+
+    #[test]
+    fn test_calculate_asymmetric_widths() {
+        let stations = vec![
+            StationData::new("No.0", 0.0, 5.0, 1.0),
+            StationData::new("No.1", 10.0, 1.0, 5.0),
+        ];
+        let config = RoadSectionConfig::default();
+        let geometry = calculate_road_section(&stations, &config);
+        let (lines, _) = geometry_to_dxf(&geometry);
+        assert!(!lines.is_empty());
+    }
+
+    // ================================================================
+    // Scale conversion accuracy
+    // ================================================================
+
+    #[test]
+    fn test_scale_conversion() {
+        let stations = vec![
+            StationData::new("No.0", 0.0, 2.0, 3.0),
+            StationData::new("No.1", 10.0, 2.0, 3.0),
+        ];
+        let config = RoadSectionConfig { scale: 1000.0, ..Default::default() };
+        let geometry = calculate_road_section(&stations, &config);
+
+        // Station at x=10.0m should have x_scaled = 10000.0mm
+        let max_x = geometry.lines.iter()
+            .flat_map(|l| vec![l.x1, l.x2])
+            .fold(f64::NEG_INFINITY, f64::max);
+        assert!((max_x - 10000.0).abs() < 1.0,
+            "10m * 1000 scale = 10000mm, got {}", max_x);
+
+        // Left width 2.0m → y = 2000mm
+        let max_y = geometry.lines.iter()
+            .flat_map(|l| vec![l.y1, l.y2])
+            .fold(f64::NEG_INFINITY, f64::max);
+        assert!((max_y - 2000.0).abs() < 1.0,
+            "2m left width * 1000 = 2000mm, got {}", max_y);
+    }
+
+    // ================================================================
+    // geometry_to_dxf text properties
+    // ================================================================
+
+    #[test]
+    fn test_geometry_to_dxf_text_rotation() {
+        let stations = vec![
+            StationData::new("No.0", 0.0, 2.5, 2.5),
+            StationData::new("No.1", 10.0, 2.5, 2.5),
+        ];
+        let config = RoadSectionConfig::default();
+        let geometry = calculate_road_section(&stations, &config);
+        let (_, texts) = geometry_to_dxf(&geometry);
+
+        // Width dimension texts should be rotated -90°
+        let width_texts: Vec<_> = texts.iter()
+            .filter(|t| t.rotation != 0.0)
+            .collect();
+        for text in &width_texts {
+            assert_eq!(text.rotation, -90.0);
+        }
+    }
+
+    #[test]
+    fn test_geometry_to_dxf_station_name_blue() {
+        let stations = vec![StationData::new("ABC", 0.0, 2.5, 2.5)];
+        let config = RoadSectionConfig::default();
+        let geometry = calculate_road_section(&stations, &config);
+        let (_, texts) = geometry_to_dxf(&geometry);
+
+        let name_texts: Vec<_> = texts.iter()
+            .filter(|t| t.text == "ABC")
+            .collect();
+        assert_eq!(name_texts.len(), 1);
+        assert_eq!(name_texts[0].color, 5, "Station name must be blue (color 5)");
+    }
+
+    // ================================================================
+    // CSV parsing edge cases
+    // ================================================================
+
+    #[test]
+    fn test_parse_csv_empty() {
+        let result = parse_road_section_csv("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_csv_header_only() {
+        let result = parse_road_section_csv("測点名,累積延長,左幅員,右幅員\n");
+        assert!(result.is_err(), "Header-only CSV should error");
+    }
+
+    #[test]
+    fn test_parse_csv_comment_lines_skipped() {
+        let csv = "name,x,wl,wr\n# this is a comment\nNo.0,0.0,2.5,2.5\n";
+        let result = parse_road_section_csv(csv).unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_csv_empty_lines_skipped() {
+        let csv = "name,x,wl,wr\n\nNo.0,0.0,2.5,2.5\n\nNo.1,10.0,3.0,3.0\n\n";
+        let result = parse_road_section_csv(csv).unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_csv_insufficient_columns() {
+        // Lines with < 4 columns should be skipped
+        let csv = "name,x,wl,wr\nNo.0,0.0,2.5,2.5\nshort,1.0\nNo.1,10.0,3.0,3.0\n";
+        let result = parse_road_section_csv(csv).unwrap();
+        assert_eq!(result.len(), 2, "Short lines should be skipped");
+    }
+
+    #[test]
+    fn test_parse_csv_japanese_headers() {
+        let csv = "測点名,累積延長,左幅員,右幅員\nNo.0,0.0,2.5,2.5\n";
+        let result = parse_road_section_csv(csv).unwrap();
+        assert_eq!(result[0].name, "No.0");
+        assert_eq!(result[0].wl, 2.5);
+        assert_eq!(result[0].wr, 2.5);
+    }
+
+    #[test]
+    fn test_parse_csv_no_header() {
+        let csv = "No.0,0.0,2.5,3.0\nNo.1,10.0,2.5,3.0\n";
+        let result = parse_road_section_csv(csv).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name, "No.0");
+        assert_eq!(result[0].x, 0.0);
+        assert_eq!(result[0].wl, 2.5);
+        assert_eq!(result[0].wr, 3.0);
+    }
+
+    #[test]
+    fn test_parse_csv_wl_wr_default_to_zero() {
+        // wl/wr columns have non-numeric values → default to 0.0
+        let csv = "name,x,wl,wr\nNo.0,0.0,abc,def\n";
+        let result = parse_road_section_csv(csv).unwrap();
+        assert_eq!(result[0].wl, 0.0);
+        assert_eq!(result[0].wr, 0.0);
+    }
+
+    // ================================================================
+    // DimensionText builder
+    // ================================================================
+
+    #[test]
+    fn test_dimension_text_builder() {
+        let dt = DimensionText::new("test", 100.0, 200.0)
+            .with_rotation(-90.0)
+            .with_color(5)
+            .with_alignment(HorizontalAlignment::Left, VerticalAlignment::Top);
+        assert_eq!(dt.text, "test");
+        assert_eq!(dt.x, 100.0);
+        assert_eq!(dt.y, 200.0);
+        assert_eq!(dt.rotation, -90.0);
+        assert_eq!(dt.color, 5);
+    }
+
+    // ================================================================
+    // LineSegment constructors
+    // ================================================================
+
+    #[test]
+    fn test_line_segment_default_color() {
+        let seg = LineSegment::new(0.0, 0.0, 100.0, 100.0);
+        assert_eq!(seg.color, 7, "Default color should be 7 (white)");
+    }
+
+    #[test]
+    fn test_line_segment_with_color() {
+        let seg = LineSegment::with_color(0.0, 0.0, 100.0, 100.0, 3);
+        assert_eq!(seg.color, 3);
+    }
+
+    // ================================================================
+    // Distance dimension text
+    // ================================================================
+
+    #[test]
+    fn test_distance_dimension_text() {
+        let stations = vec![
+            StationData::new("No.0", 0.0, 2.5, 2.5),
+            StationData::new("No.1", 15.5, 2.5, 2.5),
+        ];
+        let config = RoadSectionConfig::default();
+        let geometry = calculate_road_section(&stations, &config);
+
+        // There should be a dimension text showing "15.50" (the distance)
+        let dist_text = geometry.texts.iter()
+            .find(|t| t.text == "15.50");
+        assert!(dist_text.is_some(), "Should have distance dimension text '15.50'");
+    }
 }

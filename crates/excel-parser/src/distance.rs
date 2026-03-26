@@ -131,4 +131,96 @@ mod tests {
         // diffs: 16, 16, 16, 16 → median = 16 → NOT < 16 → not cumulative
         assert!(!is_cumulative(&vals));
     }
+
+    // ================================================================
+    // is_cumulative: 1 and 2 values
+    // ================================================================
+
+    #[test]
+    fn test_is_cumulative_one_value() {
+        assert!(!is_cumulative(&[5.0]));
+    }
+
+    #[test]
+    fn test_is_cumulative_two_values() {
+        assert!(!is_cumulative(&[0.0, 1.0]));
+    }
+
+    // ================================================================
+    // is_cumulative: decreasing values
+    // ================================================================
+
+    #[test]
+    fn test_is_cumulative_decreasing() {
+        let vals = vec![100.0, 80.0, 60.0, 40.0, 20.0];
+        assert!(!is_cumulative(&vals), "Decreasing values are not cumulative");
+    }
+
+    // ================================================================
+    // is_cumulative: just above boundary (15.9 < 16)
+    // ================================================================
+
+    #[test]
+    fn test_is_cumulative_just_below_boundary() {
+        // Median diff = 15.9 < 16 → cumulative
+        let vals = vec![0.0, 15.9, 31.8, 47.7, 63.6];
+        assert!(is_cumulative(&vals));
+    }
+
+    // ================================================================
+    // to_cumulative: single value
+    // ================================================================
+
+    #[test]
+    fn test_to_cumulative_single_value() {
+        let vals = vec![42.0];
+        let result = to_cumulative(&vals);
+        assert_eq!(result, vec![42.0]);
+    }
+
+    // ================================================================
+    // to_cumulative_rows
+    // ================================================================
+
+    #[test]
+    fn test_to_cumulative_rows_span() {
+        use crate::RawRow;
+        let mut rows = vec![
+            RawRow { name: "A".into(), x: 5.0, wl: 1.0, wr: 1.0 },
+            RawRow { name: "B".into(), x: 10.0, wl: 1.0, wr: 1.0 },
+            RawRow { name: "C".into(), x: 5.0, wl: 1.0, wr: 1.0 },
+        ];
+        to_cumulative_rows(&mut rows);
+        // Not cumulative (not monotonic, < 4 values) → cumsum
+        assert!((rows[0].x - 5.0).abs() < 1e-9);
+        assert!((rows[1].x - 15.0).abs() < 1e-9);
+        assert!((rows[2].x - 20.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_to_cumulative_rows_already_cumulative() {
+        use crate::RawRow;
+        let mut rows = vec![
+            RawRow { name: "A".into(), x: 0.0, wl: 1.0, wr: 1.0 },
+            RawRow { name: "B".into(), x: 1.0, wl: 1.0, wr: 1.0 },
+            RawRow { name: "C".into(), x: 3.0, wl: 1.0, wr: 1.0 },
+            RawRow { name: "D".into(), x: 5.0, wl: 1.0, wr: 1.0 },
+            RawRow { name: "E".into(), x: 7.0, wl: 1.0, wr: 1.0 },
+        ];
+        to_cumulative_rows(&mut rows);
+        // Already cumulative (median diff = 2 < 16) → unchanged
+        assert!((rows[4].x - 7.0).abs() < 1e-9);
+    }
+
+    // ================================================================
+    // median edge case: even number of elements
+    // ================================================================
+
+    #[test]
+    fn test_is_cumulative_even_diffs() {
+        // 5 values → 4 diffs (even)
+        let vals = vec![0.0, 2.0, 5.0, 9.0, 14.0];
+        // diffs: 2, 3, 4, 5 → sorted: 2, 3, 4, 5 → median = (3+4)/2 = 3.5 < 16
+        assert!(is_cumulative(&vals));
+    }
 }

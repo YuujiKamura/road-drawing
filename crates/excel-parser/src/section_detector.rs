@@ -307,4 +307,112 @@ No.0,0,0.8,,
         assert_eq!(rows[0].name, "No.0");
         assert!((rows[0].wl - 0.8).abs() < 1e-9);
     }
+
+    // ================================================================
+    // No sections in body → fallback
+    // ================================================================
+
+    #[test]
+    fn test_get_sections_no_body_no_filename_match() {
+        assert_eq!(get_available_sections("random content", "data.csv"), vec!["区間1"]);
+    }
+
+    // ================================================================
+    // Multiple sections in body
+    // ================================================================
+
+    #[test]
+    fn test_get_sections_multiple_in_body() {
+        let text = "区間1,台形計算,,,\ndata\n区間2,台形計算,,,\ndata\n区間5,台形計算,,,\n";
+        let sections = get_available_sections(text, "sheet.csv");
+        assert_eq!(sections, vec!["区間1", "区間2", "区間5"]);
+    }
+
+    // ================================================================
+    // Duplicate section names
+    // ================================================================
+
+    #[test]
+    fn test_get_sections_duplicate_names() {
+        let text = "区間1,台形計算,,,\ndata\n区間1,台形計算,,,\nmore data\n";
+        let sections = get_available_sections(text, "sheet.csv");
+        // Regex finds both occurrences
+        assert_eq!(sections.len(), 2);
+    }
+
+    // ================================================================
+    // Empty CSV block
+    // ================================================================
+
+    #[test]
+    fn test_extract_empty_content() {
+        let result = extract_section_data("", "区間1");
+        assert!(result.is_err());
+    }
+
+    // ================================================================
+    // Comment lines and blank lines
+    // ================================================================
+
+    #[test]
+    fn test_extract_comment_lines_skipped() {
+        let text = "name,x,wl,wr\n# comment\nNo.0,0.0,1.0,1.0\n# another comment\n";
+        let rows = extract_section_data(text, "区間1").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "No.0");
+    }
+
+    // ================================================================
+    // Non-numeric x values skipped
+    // ================================================================
+
+    #[test]
+    fn test_extract_non_numeric_x_skipped() {
+        let text = "name,x,wl,wr\nNo.0,abc,1.0,1.0\nNo.1,10.0,2.0,2.0\n";
+        let rows = extract_section_data(text, "区間1").unwrap();
+        assert_eq!(rows.len(), 1, "Row with non-numeric x should be skipped");
+        assert_eq!(rows[0].name, "No.1");
+    }
+
+    // ================================================================
+    // Section not found in multi-section file
+    // ================================================================
+
+    #[test]
+    fn test_extract_section_not_found() {
+        let text = "区間1,台形計算,,,\n測点名,単延長L,幅員W,平均幅員Wa,面積m2\nNo.0,0,0.8,,\n";
+        // Looking for 区間2 which doesn't exist → falls back to whole text parse
+        let result = extract_section_data(text, "区間2");
+        // The whole text starts with "区間1,..." which has non-numeric x → may error
+        // Actually the first row "区間1,台形計算,,," → "台形計算" can't parse as x → skipped
+        // "測点名,単延長L,..." is detected as header
+        // "No.0,0,0.8,," → valid
+        assert!(result.is_ok());
+    }
+
+    // ================================================================
+    // English column headers
+    // ================================================================
+
+    #[test]
+    fn test_extract_english_headers() {
+        let text = "name,x,wl,wr\nA,0.0,1.5,2.5\nB,5.0,1.0,2.0\n";
+        let rows = extract_section_data(text, "区間1").unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].name, "A");
+        assert!((rows[0].wr - 2.5).abs() < 1e-9);
+    }
+
+    // ================================================================
+    // ParseError Display
+    // ================================================================
+
+    #[test]
+    fn test_parse_error_display() {
+        let e1 = ParseError::NoData;
+        assert_eq!(format!("{}", e1), "No data found");
+
+        let e2 = ParseError::InvalidFormat("test error".to_string());
+        assert!(format!("{}", e2).contains("test error"));
+    }
 }

@@ -408,4 +408,397 @@ mod tests {
         let filtered = filter_by_layer(&lines, "中心");
         assert_eq!(filtered.len(), 2);
     }
+
+    // ================================================================
+    // Zero stripes
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_zero_stripes() {
+        let centerlines = horizontal_centerline();
+        let config = CrosswalkConfig {
+            stripe_count: 0,
+            ..CrosswalkConfig::default()
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert!(result.is_empty(), "0 stripes must produce 0 lines");
+    }
+
+    // ================================================================
+    // 1 stripe — centered on ref point
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_one_stripe_centered() {
+        let centerlines = horizontal_centerline();
+        let config = CrosswalkConfig {
+            start_offset: 5000.0,
+            stripe_length: 4000.0,
+            stripe_width: 450.0,
+            stripe_count: 1,
+            stripe_spacing: 0.0,
+            layer: "横断歩道".to_string(),
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 4, "1 stripe = 4 lines");
+
+        // The stripe center should be at x=5000, y=0 (on centerline)
+        let all_x: Vec<f64> = result.iter().flat_map(|l| vec![l.x1, l.x2]).collect();
+        let avg_x: f64 = all_x.iter().sum::<f64>() / all_x.len() as f64;
+        assert!((avg_x - 5000.0).abs() < 1.0,
+            "Single stripe center X should be at offset: avg={}", avg_x);
+
+        let all_y: Vec<f64> = result.iter().flat_map(|l| vec![l.y1, l.y2]).collect();
+        let avg_y: f64 = all_y.iter().sum::<f64>() / all_y.len() as f64;
+        assert!(avg_y.abs() < 1.0,
+            "Single stripe should be centered on centerline Y: avg={}", avg_y);
+    }
+
+    // ================================================================
+    // Even stripe count
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_even_stripe_count() {
+        let centerlines = horizontal_centerline();
+        let config = CrosswalkConfig {
+            start_offset: 10000.0,
+            stripe_count: 4,
+            ..CrosswalkConfig::default()
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 16, "4 stripes × 4 lines = 16");
+
+        // Still symmetric around centerline
+        let all_y: Vec<f64> = result.iter().flat_map(|l| vec![l.y1, l.y2]).collect();
+        let min_y = all_y.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max_y = all_y.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        assert!((min_y + max_y).abs() < 1.0,
+            "Even stripe count must still be symmetric: min={}, max={}", min_y, max_y);
+    }
+
+    // ================================================================
+    // Odd stripe count (non-default)
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_odd_stripe_count_3() {
+        let centerlines = horizontal_centerline();
+        let config = CrosswalkConfig {
+            start_offset: 10000.0,
+            stripe_count: 3,
+            ..CrosswalkConfig::default()
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 12, "3 stripes × 4 lines = 12");
+    }
+
+    // ================================================================
+    // Negative start_offset — returns last point (clamped)
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_negative_offset() {
+        let centerlines = horizontal_centerline();
+        let config = CrosswalkConfig {
+            start_offset: -1000.0,
+            stripe_count: 3,
+            ..CrosswalkConfig::default()
+        };
+        // point_at_distance with negative distance: remaining starts negative,
+        // first segment check: remaining <= seg_len + 1e-9 → true (negative <= positive)
+        // ratio will be negative/seg_len → negative ratio, point before path start
+        let result = generate_crosswalk(&centerlines, &config);
+        // Should still produce geometry (extrapolated before path start)
+        assert_eq!(result.len(), 12, "Should still generate 3 stripes even with negative offset");
+    }
+
+    // ================================================================
+    // Offset beyond centerline end — clamps to last point
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_offset_beyond_centerline() {
+        let centerlines = vec![DxfLine::new(0.0, 0.0, 5000.0, 0.0)];
+        let config = CrosswalkConfig {
+            start_offset: 10000.0, // far beyond the 5000mm centerline
+            stripe_count: 3,
+            ..CrosswalkConfig::default()
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        // point_at_distance returns last point when beyond path end
+        assert_eq!(result.len(), 12, "Should generate stripes at path end");
+
+        // All stripes should cluster near x=5000 (the end of centerline)
+        let all_x: Vec<f64> = result.iter().flat_map(|l| vec![l.x1, l.x2]).collect();
+        let avg_x: f64 = all_x.iter().sum::<f64>() / all_x.len() as f64;
+        assert!((avg_x - 5000.0).abs() < 5000.0,
+            "Stripes should be near path end: avg_x={}", avg_x);
+    }
+
+    // ================================================================
+    // Angled centerline: 45 degrees
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_angled_45deg() {
+        // 45 degree centerline: (0,0) → (10000, 10000)
+        let centerlines = vec![DxfLine::new(0.0, 0.0, 10000.0, 10000.0)];
+        let config = CrosswalkConfig {
+            start_offset: 5000.0,
+            stripe_length: 4000.0,
+            stripe_width: 450.0,
+            stripe_count: 1,
+            stripe_spacing: 0.0,
+            layer: "横断歩道".to_string(),
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 4, "1 stripe = 4 lines on angled centerline");
+
+        // The stripe should be perpendicular to the 45° road direction
+        // Road angle = 45° → stripes extend at 135° (perpendicular)
+        // Check that the stripe is not axis-aligned
+        let dx = (result[0].x2 - result[0].x1).abs();
+        let dy = (result[0].y2 - result[0].y1).abs();
+        assert!(dx > 1.0 && dy > 1.0,
+            "On 45° road, stripe edges should have both X and Y components: dx={}, dy={}", dx, dy);
+    }
+
+    // ================================================================
+    // Angled centerline: 90 degrees (vertical road)
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_angled_90deg() {
+        // Vertical centerline: (0,0) → (0, 20000)
+        let centerlines = vec![DxfLine::new(0.0, 0.0, 0.0, 20000.0)];
+        let config = CrosswalkConfig {
+            start_offset: 10000.0,
+            stripe_length: 4000.0,
+            stripe_width: 450.0,
+            stripe_count: 3,
+            stripe_spacing: 450.0,
+            layer: "横断歩道".to_string(),
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 12, "3 stripes on vertical road");
+
+        // On a vertical road, stripes should extend in X direction (perpendicular)
+        let all_x: Vec<f64> = result.iter().flat_map(|l| vec![l.x1, l.x2]).collect();
+        let min_x = all_x.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max_x = all_x.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        assert!(min_x < 0.0 && max_x > 0.0,
+            "On vertical road, stripes should span both sides of X=0: min={}, max={}", min_x, max_x);
+    }
+
+    // ================================================================
+    // Multi-segment centerline path
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_multi_segment_centerline() {
+        // L-shaped path: horizontal then vertical
+        let centerlines = vec![
+            DxfLine::new(0.0, 0.0, 10000.0, 0.0),
+            DxfLine::new(10000.0, 0.0, 10000.0, 10000.0),
+        ];
+        let config = CrosswalkConfig {
+            start_offset: 15000.0, // 10000 horizontal + 5000 vertical
+            stripe_count: 1,
+            stripe_length: 2000.0,
+            stripe_width: 450.0,
+            stripe_spacing: 0.0,
+            layer: "横断歩道".to_string(),
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 4);
+
+        // At distance 15000, we're on the vertical segment at (10000, 5000)
+        let all_x: Vec<f64> = result.iter().flat_map(|l| vec![l.x1, l.x2]).collect();
+        let avg_x: f64 = all_x.iter().sum::<f64>() / all_x.len() as f64;
+        assert!((avg_x - 10000.0).abs() < 500.0,
+            "Stripe should be near x=10000 on vertical segment: avg={}", avg_x);
+    }
+
+    // ================================================================
+    // build_centerline_path edge cases
+    // ================================================================
+
+    #[test]
+    fn test_build_path_empty() {
+        let path = build_centerline_path(&[]);
+        assert!(path.is_empty());
+    }
+
+    #[test]
+    fn test_build_path_single_line() {
+        let lines = vec![DxfLine::new(10.0, 20.0, 30.0, 40.0)];
+        let path = build_centerline_path(&lines);
+        assert_eq!(path.len(), 2);
+        assert!((path[0].x - 10.0).abs() < 1e-9);
+        assert!((path[0].y - 20.0).abs() < 1e-9);
+        assert!((path[1].x - 30.0).abs() < 1e-9);
+        assert!((path[1].y - 40.0).abs() < 1e-9);
+    }
+
+    // ================================================================
+    // point_at_distance edge cases
+    // ================================================================
+
+    #[test]
+    fn test_point_at_distance_single_point() {
+        let path = vec![PathPoint { x: 5.0, y: 5.0 }];
+        assert!(point_at_distance(&path, 0.0).is_none(), "< 2 points returns None");
+    }
+
+    #[test]
+    fn test_point_at_distance_empty() {
+        assert!(point_at_distance(&[], 0.0).is_none());
+    }
+
+    #[test]
+    fn test_point_at_distance_zero() {
+        let path = vec![
+            PathPoint { x: 100.0, y: 200.0 },
+            PathPoint { x: 300.0, y: 200.0 },
+        ];
+        let p = point_at_distance(&path, 0.0).unwrap();
+        assert!((p.x - 100.0).abs() < 1e-9);
+        assert!((p.y - 200.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_point_at_distance_exact_end() {
+        let path = vec![
+            PathPoint { x: 0.0, y: 0.0 },
+            PathPoint { x: 100.0, y: 0.0 },
+        ];
+        let p = point_at_distance(&path, 100.0).unwrap();
+        assert!((p.x - 100.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_point_at_distance_beyond_end() {
+        let path = vec![
+            PathPoint { x: 0.0, y: 0.0 },
+            PathPoint { x: 100.0, y: 0.0 },
+        ];
+        let p = point_at_distance(&path, 500.0).unwrap();
+        // Returns last point
+        assert!((p.x - 100.0).abs() < 1e-6);
+    }
+
+    // ================================================================
+    // filter_by_layer edge cases
+    // ================================================================
+
+    #[test]
+    fn test_filter_by_layer_empty_lines() {
+        let filtered = filter_by_layer(&[], "中心");
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn test_filter_by_layer_no_match() {
+        let lines = vec![DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "外壁")];
+        let filtered = filter_by_layer(&lines, "中心");
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn test_filter_by_layer_empty_pattern() {
+        let lines = vec![
+            DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "中心線"),
+            DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, ""),
+        ];
+        // Empty pattern matches everything (every string contains "")
+        let filtered = filter_by_layer(&lines, "");
+        assert_eq!(filtered.len(), 2);
+    }
+
+    // ================================================================
+    // Stripe dimensions accuracy
+    // ================================================================
+
+    #[test]
+    fn test_stripe_dimensions_correct() {
+        let centerlines = horizontal_centerline();
+        let config = CrosswalkConfig {
+            start_offset: 10000.0,
+            stripe_length: 4000.0,
+            stripe_width: 450.0,
+            stripe_count: 1,
+            stripe_spacing: 0.0,
+            layer: "横断歩道".to_string(),
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 4);
+
+        // On horizontal road: stripe extends in Y (perpendicular), width in X (road dir)
+        // Line 0: top edge (y1=+2000, y2=-2000, x constant at x_center + half_width)
+        // Measure Y extent = stripe_length = 4000
+        let all_y: Vec<f64> = result.iter().flat_map(|l| vec![l.y1, l.y2]).collect();
+        let min_y = all_y.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max_y = all_y.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let y_extent = max_y - min_y;
+        assert!((y_extent - 4000.0).abs() < 1.0,
+            "Y extent should equal stripe_length 4000: got {}", y_extent);
+
+        // Measure X extent = stripe_width = 450
+        let all_x: Vec<f64> = result.iter().flat_map(|l| vec![l.x1, l.x2]).collect();
+        let min_x = all_x.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max_x = all_x.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let x_extent = max_x - min_x;
+        assert!((x_extent - 450.0).abs() < 1.0,
+            "X extent should equal stripe_width 450: got {}", x_extent);
+    }
+
+    // ================================================================
+    // Default config values
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_config_default() {
+        let config = CrosswalkConfig::default();
+        assert_eq!(config.start_offset, 11000.0);
+        assert_eq!(config.stripe_length, 4000.0);
+        assert_eq!(config.stripe_width, 450.0);
+        assert_eq!(config.stripe_count, 7);
+        assert_eq!(config.stripe_spacing, 450.0);
+        assert_eq!(config.layer, "横断歩道");
+    }
+
+    // ================================================================
+    // Zero-length centerline (degenerate)
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_zero_length_centerline() {
+        let centerlines = vec![DxfLine::new(5000.0, 5000.0, 5000.0, 5000.0)];
+        let config = CrosswalkConfig {
+            start_offset: 0.0,
+            stripe_count: 1,
+            ..CrosswalkConfig::default()
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        // Path has 2 points but segment length is 0 → road_angle = atan2(0,0) = 0
+        // Should still generate geometry
+        assert_eq!(result.len(), 4);
+    }
+
+    // ================================================================
+    // Large stripe count
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_large_stripe_count() {
+        let centerlines = horizontal_centerline();
+        let config = CrosswalkConfig {
+            start_offset: 10000.0,
+            stripe_count: 100,
+            ..CrosswalkConfig::default()
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 400, "100 stripes × 4 lines = 400");
+    }
 }
