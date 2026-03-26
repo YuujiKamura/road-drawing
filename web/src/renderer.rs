@@ -4,7 +4,7 @@
 //! Handles coordinate transformation: DXF Y-up → screen Y-down.
 
 use egui::{Color32, Pos2, Stroke, Vec2};
-use road_section::{DimensionText, LineSegment, RoadSectionGeometry};
+use road_section::RoadSectionGeometry;
 
 /// Viewport transformation state
 pub struct Viewport {
