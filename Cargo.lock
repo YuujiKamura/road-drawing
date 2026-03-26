@@ -389,6 +389,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "road-marking"
+version = "0.1.0"
+dependencies = [
+ "dxf-engine",
+]
+
+[[package]]
 name = "road-section"
 version = "0.1.0"
 dependencies = [

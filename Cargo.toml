@@ -4,6 +4,7 @@ members = [
     "crates/road-section",
     "crates/excel-parser",
     "crates/triangle-core",
+    "crates/road-marking",
     "cli",
 ]
 resolver = "2"
