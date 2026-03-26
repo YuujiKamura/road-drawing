@@ -46,25 +46,176 @@ impl Default for CrosswalkConfig {
     }
 }
 
-/// Build a path from centerline DxfLine entities
+/// Build a path from centerline DxfLine entities.
+/// Deduplicates shared endpoints between consecutive segments.
 pub fn build_centerline_path(lines: &[DxfLine]) -> Vec<PathPoint> {
-    todo!("Implement: extract path points from centerline lines")
+    if lines.is_empty() {
+        return vec![];
+    }
+    let mut path = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if i == 0 {
+            path.push(PathPoint { x: line.x1, y: line.y1 });
+        }
+        path.push(PathPoint { x: line.x2, y: line.y2 });
+    }
+    path
 }
 
-/// Get a point at a given distance along the path
+/// Get a point at a given distance along the path via linear interpolation.
 pub fn point_at_distance(path: &[PathPoint], distance: f64) -> Option<PathPoint> {
-    todo!("Implement: interpolate point at cumulative distance along path")
+    if path.len() < 2 {
+        return None;
+    }
+    let mut remaining = distance;
+    for i in 0..path.len() - 1 {
+        let dx = path[i + 1].x - path[i].x;
+        let dy = path[i + 1].y - path[i].y;
+        let seg_len = (dx * dx + dy * dy).sqrt();
+        if remaining <= seg_len + 1e-9 {
+            let ratio = if seg_len > 1e-12 { remaining / seg_len } else { 0.0 };
+            return Some(PathPoint {
+                x: path[i].x + dx * ratio,
+                y: path[i].y + dy * ratio,
+            });
+        }
+        remaining -= seg_len;
+    }
+    // Beyond path end — return last point
+    path.last().copied()
 }
 
-/// Generate crosswalk stripes from centerline
-/// Returns DXF lines forming stripe rectangles (4 lines per stripe)
+/// Get road direction angle at a given distance along the path.
+fn road_angle_at(path: &[PathPoint], distance: f64) -> f64 {
+    if path.len() < 2 {
+        return 0.0;
+    }
+    let mut remaining = distance;
+    for i in 0..path.len() - 1 {
+        let dx = path[i + 1].x - path[i].x;
+        let dy = path[i + 1].y - path[i].y;
+        let seg_len = (dx * dx + dy * dy).sqrt();
+        if remaining <= seg_len + 1e-9 {
+            return dy.atan2(dx);
+        }
+        remaining -= seg_len;
+    }
+    // Last segment direction
+    let n = path.len();
+    let dx = path[n - 1].x - path[n - 2].x;
+    let dy = path[n - 1].y - path[n - 2].y;
+    dy.atan2(dx)
+}
+
+/// Generate a single stripe rectangle centered at `center` with given dimensions and angles.
+/// Returns 4 DxfLines forming the rectangle.
+fn generate_stripe_rect(
+    center: PathPoint,
+    stripe_length: f64,
+    stripe_width: f64,
+    road_angle: f64,
+    layer: &str,
+) -> Vec<DxfLine> {
+    let half_len = stripe_length / 2.0;
+    let half_wid = stripe_width / 2.0;
+
+    // Road direction unit vectors
+    let cos_r = road_angle.cos();
+    let sin_r = road_angle.sin();
+
+    // Perpendicular direction (crossing the road)
+    let cos_p = -sin_r;
+    let sin_p = cos_r;
+
+    // 4 corners: road_direction ± half_wid, perp_direction ± half_len
+    let corners = [
+        PathPoint {
+            x: center.x + half_wid * cos_r + half_len * cos_p,
+            y: center.y + half_wid * sin_r + half_len * sin_p,
+        },
+        PathPoint {
+            x: center.x + half_wid * cos_r - half_len * cos_p,
+            y: center.y + half_wid * sin_r - half_len * sin_p,
+        },
+        PathPoint {
+            x: center.x - half_wid * cos_r - half_len * cos_p,
+            y: center.y - half_wid * sin_r - half_len * sin_p,
+        },
+        PathPoint {
+            x: center.x - half_wid * cos_r + half_len * cos_p,
+            y: center.y - half_wid * sin_r + half_len * sin_p,
+        },
+    ];
+
+    vec![
+        DxfLine::with_style(corners[0].x, corners[0].y, corners[1].x, corners[1].y, 7, layer),
+        DxfLine::with_style(corners[1].x, corners[1].y, corners[2].x, corners[2].y, 7, layer),
+        DxfLine::with_style(corners[2].x, corners[2].y, corners[3].x, corners[3].y, 7, layer),
+        DxfLine::with_style(corners[3].x, corners[3].y, corners[0].x, corners[0].y, 7, layer),
+    ]
+}
+
+/// Generate crosswalk stripes from centerline.
+/// Stripes are centered symmetrically around `start_offset` along the road direction.
+/// Returns DXF lines forming stripe rectangles (4 lines per stripe).
 pub fn generate_crosswalk(centerlines: &[DxfLine], config: &CrosswalkConfig) -> Vec<DxfLine> {
-    todo!("Implement: generate stripe rectangles along centerline")
+    if centerlines.is_empty() || config.stripe_count == 0 {
+        return vec![];
+    }
+
+    let path = build_centerline_path(centerlines);
+    if path.len() < 2 {
+        return vec![];
+    }
+
+    let road_angle = road_angle_at(&path, config.start_offset);
+
+    // Reference point on centerline at start_offset
+    let ref_point = match point_at_distance(&path, config.start_offset) {
+        Some(p) => p,
+        None => return vec![],
+    };
+
+    // Total width of all stripes + gaps
+    let n = config.stripe_count as f64;
+    let total_width = n * config.stripe_width + (n - 1.0) * config.stripe_spacing;
+
+    // Stripes are placed centered around ref_point along road direction
+    let cos_r = road_angle.cos();
+    let sin_r = road_angle.sin();
+
+    let mut result = Vec::new();
+    for i in 0..config.stripe_count {
+        // Offset from center of the group
+        let stripe_center_offset = (i as f64) * (config.stripe_width + config.stripe_spacing)
+            + config.stripe_width / 2.0
+            - total_width / 2.0;
+
+        let center = PathPoint {
+            x: ref_point.x + stripe_center_offset * cos_r,
+            y: ref_point.y + stripe_center_offset * sin_r,
+        };
+
+        result.extend(generate_stripe_rect(
+            center,
+            config.stripe_length,
+            config.stripe_width,
+            road_angle,
+            &config.layer,
+        ));
+    }
+
+    result
 }
 
-/// Filter lines by layer name pattern (case-insensitive contains)
+/// Filter lines by layer name pattern (case-insensitive contains).
 pub fn filter_by_layer(lines: &[DxfLine], pattern: &str) -> Vec<DxfLine> {
-    todo!("Implement: filter lines where layer contains pattern")
+    let pattern_lower = pattern.to_lowercase();
+    lines
+        .iter()
+        .filter(|l| l.layer.to_lowercase().contains(&pattern_lower))
+        .cloned()
+        .collect()
 }
 
 #[cfg(test)]

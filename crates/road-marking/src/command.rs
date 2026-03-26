@@ -30,24 +30,231 @@ pub struct CommandResult {
     pub message: String,
 }
 
-/// Parse a single command from JSON string
+/// Parse a single command from JSON string.
 /// Format: {"type": "crosswalk", "params": {"key": "value", ...}}
+/// Uses manual parsing (no external JSON library, matching Kotlin approach).
 pub fn parse_command(json: &str) -> Option<MarkingCommand> {
-    todo!("Implement: parse JSON to MarkingCommand")
+    let command_type = extract_json_value(json, "type")?;
+    if command_type.is_empty() {
+        return None;
+    }
+
+    let params = if let Some(params_obj) = extract_json_object(json, "params") {
+        parse_params(&params_obj)
+    } else {
+        HashMap::new()
+    };
+
+    Some(MarkingCommand {
+        command_type,
+        params,
+    })
 }
 
-/// Parse a list of commands from JSON string
+/// Parse a list of commands from JSON string.
 /// Format: {"commands": [{...}, {...}]}
 pub fn parse_command_list(json: &str) -> Vec<MarkingCommand> {
-    todo!("Implement: parse JSON array of commands")
+    let array_str = match extract_json_array(json, "commands") {
+        Some(s) => s,
+        None => return vec![],
+    };
+
+    // Split array into individual objects by tracking brace depth
+    let mut commands = Vec::new();
+    let mut depth = 0;
+    let mut start = None;
+
+    for (i, ch) in array_str.char_indices() {
+        match ch {
+            '{' => {
+                if depth == 0 {
+                    start = Some(i);
+                }
+                depth += 1;
+            }
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    if let Some(s) = start {
+                        let obj = &array_str[s..=i];
+                        if let Some(cmd) = parse_command(obj) {
+                            commands.push(cmd);
+                        }
+                    }
+                    start = None;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    commands
 }
 
-/// Execute a marking command, producing DXF entities
+/// Execute a marking command, producing DXF entities.
 pub fn execute_command(
     command: &MarkingCommand,
     centerlines: &[DxfLine],
 ) -> CommandResult {
-    todo!("Implement: dispatch command to crosswalk/stopline/etc generator")
+    match command.command_type.as_str() {
+        "crosswalk" => execute_crosswalk(command, centerlines),
+        other => CommandResult {
+            lines: vec![],
+            texts: vec![],
+            message: format!("Unknown command type: {other}"),
+        },
+    }
+}
+
+fn execute_crosswalk(command: &MarkingCommand, centerlines: &[DxfLine]) -> CommandResult {
+    use crate::crosswalk::{generate_crosswalk, CrosswalkConfig};
+
+    let config = CrosswalkConfig {
+        start_offset: param_f64(&command.params, "startOffset", 11000.0),
+        stripe_length: param_f64(&command.params, "stripeLength", 4000.0),
+        stripe_width: param_f64(&command.params, "stripeWidth", 450.0),
+        stripe_count: param_f64(&command.params, "stripeCount", 7.0) as usize,
+        stripe_spacing: param_f64(&command.params, "stripeSpacing", 450.0),
+        layer: command.params.get("layer").cloned().unwrap_or_else(|| "横断歩道".to_string()),
+    };
+
+    let lines = generate_crosswalk(centerlines, &config);
+    let count = lines.len();
+
+    CommandResult {
+        lines,
+        texts: vec![],
+        message: format!("Generated {} crosswalk lines", count),
+    }
+}
+
+fn param_f64(params: &HashMap<String, String>, key: &str, default: f64) -> f64 {
+    params.get(key).and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
+// ── Manual JSON helpers (no external library) ──
+
+fn extract_json_value(json: &str, key: &str) -> Option<String> {
+    // Match "key" : "value" or "key": "value"
+    let patterns = [
+        format!(r#""{}""#, key),
+        format!(r#"'{}'"#, key),
+    ];
+
+    for pattern in &patterns {
+        if let Some(key_pos) = json.find(pattern.as_str()) {
+            let after_key = &json[key_pos + pattern.len()..];
+            // Skip whitespace and colon
+            let after_colon = after_key.trim_start();
+            if !after_colon.starts_with(':') {
+                continue;
+            }
+            let after_colon = after_colon[1..].trim_start();
+            // Extract quoted value
+            if after_colon.starts_with('"') {
+                let value_start = 1;
+                if let Some(end) = after_colon[value_start..].find('"') {
+                    return Some(after_colon[value_start..value_start + end].to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+fn extract_json_object(json: &str, key: &str) -> Option<String> {
+    let pattern = format!(r#""{}""#, key);
+    let key_pos = json.find(&pattern)?;
+    let after_key = &json[key_pos + pattern.len()..];
+    let after_colon = after_key.trim_start();
+    if !after_colon.starts_with(':') {
+        return None;
+    }
+    let rest = after_colon[1..].trim_start();
+
+    if !rest.starts_with('{') {
+        return None;
+    }
+
+    let mut depth = 0;
+    for (i, ch) in rest.char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(rest[1..i].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn extract_json_array(json: &str, key: &str) -> Option<String> {
+    let pattern = format!(r#""{}""#, key);
+    let key_pos = json.find(&pattern)?;
+    let after_key = &json[key_pos + pattern.len()..];
+    let after_colon = after_key.trim_start();
+    if !after_colon.starts_with(':') {
+        return None;
+    }
+    let rest = after_colon[1..].trim_start();
+
+    if !rest.starts_with('[') {
+        return None;
+    }
+
+    let mut depth = 0;
+    for (i, ch) in rest.char_indices() {
+        match ch {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(rest[1..i].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn parse_params(params_str: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    // Find all "key" : "value" pairs
+    let mut remaining = params_str;
+    while let Some(key_start) = remaining.find('"') {
+        let after_key_start = &remaining[key_start + 1..];
+        let key_end = match after_key_start.find('"') {
+            Some(e) => e,
+            None => break,
+        };
+        let key = after_key_start[..key_end].to_string();
+        let after_key = &after_key_start[key_end + 1..];
+
+        // Find colon
+        let colon_pos = match after_key.find(':') {
+            Some(p) => p,
+            None => break,
+        };
+        let after_colon = after_key[colon_pos + 1..].trim_start();
+
+        // Find value in quotes
+        if after_colon.starts_with('"') {
+            let val_content = &after_colon[1..];
+            if let Some(val_end) = val_content.find('"') {
+                let value = val_content[..val_end].to_string();
+                map.insert(key, value);
+                remaining = &val_content[val_end + 1..];
+                continue;
+            }
+        }
+        break;
+    }
+    map
 }
 
 #[cfg(test)]
