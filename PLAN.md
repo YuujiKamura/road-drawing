@@ -227,13 +227,15 @@ FULL (28列): + NAME, POINT位置, COLOR, DIM配置, ANGLE, ...
 
 ---
 
-## Phase 4: Web UI層 — egui WASM (Issue #3) 🚧 進行中
+## Phase 4: Web UI層 — egui WASM (Issue #3) ✅ ほぼ完了
 
 51テスト全パス。web/ crate作成済み (eframe 0.29, egui 0.29)。
 app.rs: CSV D&D + Shift_JIS自動検出 + road-section プレビュー描画。
 renderer.rs: Viewport座標変換 (DXF Y-up → screen Y-down) + DXFカラーマッピング。
 dxf_export.rs: stations_to_dxf() + カスタムスケール対応 + ラウンドトリップ検証済み。
-残: WASM ビルド (trunk)、GitHub Pages デプロイ、Excel D&D (calamine WASM or SheetJS fallback)。
+WASM ビルド: `trunk build --release` 通過済み (6.2MB WASM)。calamine も WASM で動作確認済み。
+GitHub Pages デプロイ: `.github/workflows/deploy.yml` 設定済み (push to master → trunk build → Pages)。
+残: Pages有効化 (Settings → Pages → Source: GitHub Actions)、DXFダウンロードボタン実装。
 
 ### 目的
 ブラウザで Excel D&D → プレビュー → DXFダウンロード。trianglelist-web の egui 骨格を移植。
@@ -388,7 +390,7 @@ web → 全 crate
 | **2** | ✅ 完了 | Phase 1 | 中 (4モジュール, 77テスト) |
 | **2.5** | 高 — 未知書式対応 | Phase 2 | 中 (calamine dump + LLM + CLI) |
 | **3** | ✅ 完了 | Phase 1 | 大 (triangle-core 112 + road-marking 44 + dxf-engine reader 228テスト) |
-| **4** | 🚧 進行中 | Phase 2+3 | 中 (Web 51テスト, WASM+デプロイ残) |
+| **4** | ✅ ほぼ完了 | Phase 2+3 | 中 (Web 51テスト, WASM+CI deploy済, DXFダウンロード残) |
 | **5** | P3 — 安定後 | Phase 2+3+4 | 小 (依存切替 + publish) |
 
 ---
