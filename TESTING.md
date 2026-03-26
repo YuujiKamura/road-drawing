@@ -9,6 +9,11 @@ test_{module}_{function}_{scenario}
 ```
 例: `test_triangle_area_equilateral`, `test_crosswalk_zero_stripes`, `test_reader_malformed_header`
 
+## 名前衝突防止（複数エージェント並列時）
+- テスト追加前に `grep -r 'fn test_関数名' crates/` で既存名を確認
+- 同名テストが存在したら別名にする（`_v2` ではなくシナリオ名を変える）
+- 同一ファイルに複数エージェントが書き込む場合はgit pullしてから作業
+
 ## カバレッジ基準
 各公開関数について最低限:
 1. **正常系**: 代表的な入力

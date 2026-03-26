@@ -7,13 +7,15 @@
 //! - Layer-based entity filtering
 //! - Bounding box calculation
 
-use super::entities::{DxfLine, DxfText};
+use super::entities::{DxfCircle, DxfLine, DxfLwPolyline, DxfText};
 use super::reader::DxfDocument;
 
 /// Spatial index built from a parsed DXF document
 pub struct DxfIndex {
     lines: Vec<DxfLine>,
     texts: Vec<DxfText>,
+    circles: Vec<DxfCircle>,
+    polylines: Vec<DxfLwPolyline>,
 }
 
 /// Bounding box
@@ -31,6 +33,8 @@ impl DxfIndex {
         Self {
             lines: doc.lines.clone(),
             texts: doc.texts.clone(),
+            circles: doc.circles.clone(),
+            polylines: doc.polylines.clone(),
         }
     }
 
@@ -70,6 +74,15 @@ impl DxfIndex {
         for t in &self.texts {
             coords.push((t.x, t.y));
         }
+        for c in &self.circles {
+            coords.push((c.x - c.radius, c.y - c.radius));
+            coords.push((c.x + c.radius, c.y + c.radius));
+        }
+        for p in &self.polylines {
+            for &(x, y) in &p.vertices {
+                coords.push((x, y));
+            }
+        }
 
         if coords.is_empty() {
             return None;
@@ -91,6 +104,12 @@ impl DxfIndex {
         }
         for t in &self.texts {
             set.insert(t.layer.clone());
+        }
+        for c in &self.circles {
+            set.insert(c.layer.clone());
+        }
+        for p in &self.polylines {
+            set.insert(p.layer.clone());
         }
         let mut layers: Vec<String> = set.into_iter().collect();
         layers.sort();
@@ -444,5 +463,100 @@ mod tests {
         let index = DxfIndex::from_document(&doc);
         let layers = index.layers();
         assert_eq!(layers, vec!["0"]);
+    }
+
+    // ================================================================
+    // FAILING: BoundingBox should include circles and polylines
+    // DxfIndex::from_document currently drops circles and polylines entirely
+    // ================================================================
+
+    #[test]
+    fn test_bounding_box_includes_circle_extent() {
+        // Circle at (500, 500) with radius 100 should expand bbox to 400..600
+        use crate::dxf::entities::DxfCircle;
+        let doc = DxfDocument {
+            circles: vec![DxfCircle { x: 500.0, y: 500.0, radius: 100.0, ..Default::default() }],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        let bbox = index.bounding_box();
+        assert!(bbox.is_some(), "BoundingBox should exist when document has circles");
+        let bbox = bbox.unwrap();
+        assert!((bbox.min_x - 400.0).abs() < 0.01, "min_x should be circle.x - radius");
+        assert!((bbox.max_x - 600.0).abs() < 0.01, "max_x should be circle.x + radius");
+        assert!((bbox.min_y - 400.0).abs() < 0.01, "min_y should be circle.y - radius");
+        assert!((bbox.max_y - 600.0).abs() < 0.01, "max_y should be circle.y + radius");
+    }
+
+    #[test]
+    fn test_bounding_box_includes_polyline_vertices() {
+        use crate::dxf::entities::DxfLwPolyline;
+        let doc = DxfDocument {
+            polylines: vec![DxfLwPolyline {
+                vertices: vec![(100.0, 200.0), (300.0, 400.0), (500.0, 100.0)],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        let bbox = index.bounding_box();
+        assert!(bbox.is_some(), "BoundingBox should exist when document has polylines");
+        let bbox = bbox.unwrap();
+        assert!((bbox.min_x - 100.0).abs() < 0.01);
+        assert!((bbox.max_x - 500.0).abs() < 0.01);
+        assert!((bbox.min_y - 100.0).abs() < 0.01);
+        assert!((bbox.max_y - 400.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_bounding_box_mixed_all_entity_types() {
+        use crate::dxf::entities::{DxfCircle, DxfLwPolyline};
+        let doc = DxfDocument {
+            lines: vec![DxfLine::new(0.0, 0.0, 10.0, 10.0)],
+            texts: vec![DxfText { x: 5.0, y: 5.0, text: "A".to_string(), ..Default::default() }],
+            circles: vec![DxfCircle { x: 50.0, y: 50.0, radius: 10.0, ..Default::default() }],
+            polylines: vec![DxfLwPolyline {
+                vertices: vec![(-20.0, -20.0), (0.0, 0.0)],
+                ..Default::default()
+            }],
+        };
+        let index = DxfIndex::from_document(&doc);
+        let bbox = index.bounding_box().unwrap();
+        // Polyline extends to -20, circle extends to 60
+        assert!((bbox.min_x - (-20.0)).abs() < 0.01, "min_x should include polyline vertex");
+        assert!((bbox.max_x - 60.0).abs() < 0.01, "max_x should include circle extent");
+        assert!((bbox.min_y - (-20.0)).abs() < 0.01, "min_y should include polyline vertex");
+        assert!((bbox.max_y - 60.0).abs() < 0.01, "max_y should include circle extent");
+    }
+
+    #[test]
+    fn test_layers_includes_circle_layers() {
+        use crate::dxf::entities::DxfCircle;
+        let doc = DxfDocument {
+            circles: vec![DxfCircle { layer: "CircleLayer".to_string(), ..Default::default() }],
+            lines: vec![DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "LineLayer")],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        let layers = index.layers();
+        assert!(layers.contains(&"CircleLayer".to_string()),
+            "layers() should include circle layers, got {:?}", layers);
+    }
+
+    #[test]
+    fn test_layers_includes_polyline_layers() {
+        use crate::dxf::entities::DxfLwPolyline;
+        let doc = DxfDocument {
+            polylines: vec![DxfLwPolyline {
+                layer: "PolyLayer".to_string(),
+                vertices: vec![(0.0, 0.0)],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        let layers = index.layers();
+        assert!(layers.contains(&"PolyLayer".to_string()),
+            "layers() should include polyline layers, got {:?}", layers);
     }
 }
