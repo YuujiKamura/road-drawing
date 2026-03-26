@@ -28,34 +28,73 @@ pub struct BoundingBox {
 impl DxfIndex {
     /// Build index from a DxfDocument
     pub fn from_document(doc: &DxfDocument) -> Self {
-        todo!("Implement: store lines and texts for lookup")
+        Self {
+            lines: doc.lines.clone(),
+            texts: doc.texts.clone(),
+        }
     }
 
     /// Find coordinate of a station name from TEXT entities
-    /// Searches for TEXT content matching the station name
+    /// Searches for TEXT content matching the station name exactly
     /// Returns (x, y) of the text position
     pub fn get_station_coord(&self, station_name: &str) -> Option<(f64, f64)> {
-        todo!("Implement: search texts for matching station name")
+        self.texts.iter()
+            .find(|t| t.text == station_name)
+            .map(|t| (t.x, t.y))
     }
 
     /// Get all lines on a specific layer (case-insensitive contains)
     pub fn lines_on_layer(&self, layer_pattern: &str) -> Vec<&DxfLine> {
-        todo!("Implement: filter lines by layer")
+        let pattern = layer_pattern.to_lowercase();
+        self.lines.iter()
+            .filter(|l| l.layer.to_lowercase().contains(&pattern))
+            .collect()
     }
 
     /// Get all texts on a specific layer (case-insensitive contains)
     pub fn texts_on_layer(&self, layer_pattern: &str) -> Vec<&DxfText> {
-        todo!("Implement: filter texts by layer")
+        let pattern = layer_pattern.to_lowercase();
+        self.texts.iter()
+            .filter(|t| t.layer.to_lowercase().contains(&pattern))
+            .collect()
     }
 
     /// Calculate bounding box of all entities
     pub fn bounding_box(&self) -> Option<BoundingBox> {
-        todo!("Implement: compute min/max from all entity coordinates")
+        let mut coords: Vec<(f64, f64)> = Vec::new();
+
+        for l in &self.lines {
+            coords.push((l.x1, l.y1));
+            coords.push((l.x2, l.y2));
+        }
+        for t in &self.texts {
+            coords.push((t.x, t.y));
+        }
+
+        if coords.is_empty() {
+            return None;
+        }
+
+        let min_x = coords.iter().map(|c| c.0).fold(f64::INFINITY, f64::min);
+        let min_y = coords.iter().map(|c| c.1).fold(f64::INFINITY, f64::min);
+        let max_x = coords.iter().map(|c| c.0).fold(f64::NEG_INFINITY, f64::max);
+        let max_y = coords.iter().map(|c| c.1).fold(f64::NEG_INFINITY, f64::max);
+
+        Some(BoundingBox { min_x, min_y, max_x, max_y })
     }
 
     /// Get all unique layer names
     pub fn layers(&self) -> Vec<String> {
-        todo!("Implement: collect unique layer names from all entities")
+        let mut set = std::collections::HashSet::new();
+        for l in &self.lines {
+            set.insert(l.layer.clone());
+        }
+        for t in &self.texts {
+            set.insert(t.layer.clone());
+        }
+        let mut layers: Vec<String> = set.into_iter().collect();
+        layers.sort();
+        layers
     }
 }
 

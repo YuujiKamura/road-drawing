@@ -35,7 +35,212 @@ impl std::fmt::Display for ReaderError {
 
 /// Parse DXF text content into a DxfDocument
 pub fn parse_dxf(content: &str) -> Result<DxfDocument, ReaderError> {
-    todo!("Implement: parse DXF text into entities")
+    // Collect all lines, trimming each
+    let raw_lines: Vec<&str> = content.lines().map(|l| l.trim()).collect();
+
+    // Find ENTITIES section
+    let entities_start = find_section_start(&raw_lines, "ENTITIES")
+        .ok_or(ReaderError::NoEntitiesSection)?;
+
+    let mut doc = DxfDocument::default();
+    let mut i = entities_start;
+
+    while i + 1 < raw_lines.len() {
+        let code = raw_lines[i];
+        let value = raw_lines[i + 1];
+
+        // End of section
+        if code == "0" && value == "ENDSEC" {
+            break;
+        }
+
+        if code == "0" {
+            match value {
+                "LINE" => {
+                    let (line, next) = parse_line_entity(&raw_lines, i + 2);
+                    doc.lines.push(line);
+                    i = next;
+                }
+                "TEXT" => {
+                    let (text, next) = parse_text_entity(&raw_lines, i + 2);
+                    doc.texts.push(text);
+                    i = next;
+                }
+                "CIRCLE" => {
+                    let (circle, next) = parse_circle_entity(&raw_lines, i + 2);
+                    doc.circles.push(circle);
+                    i = next;
+                }
+                "LWPOLYLINE" => {
+                    let (poly, next) = parse_lwpolyline_entity(&raw_lines, i + 2);
+                    doc.polylines.push(poly);
+                    i = next;
+                }
+                _ => {
+                    i += 2; // skip unknown entity type marker
+                }
+            }
+        } else {
+            i += 2;
+        }
+    }
+
+    Ok(doc)
+}
+
+/// Find the start index after "2\n<section_name>" inside a SECTION
+fn find_section_start(lines: &[&str], section_name: &str) -> Option<usize> {
+    let mut i = 0;
+    while i + 3 < lines.len() {
+        if lines[i] == "0" && lines[i + 1] == "SECTION"
+            && lines[i + 2] == "2" && lines[i + 3] == section_name
+        {
+            return Some(i + 4);
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Read group code pairs until we hit "0" (next entity or ENDSEC).
+/// Returns (entity, next_index).
+fn parse_line_entity(lines: &[&str], start: usize) -> (DxfLine, usize) {
+    let mut line = DxfLine::default();
+    let mut i = start;
+
+    while i + 1 < lines.len() {
+        let code = lines[i];
+        let value = lines[i + 1];
+
+        if code == "0" {
+            break; // next entity
+        }
+
+        match code {
+            "8" => line.layer = value.to_string(),
+            "62" => line.color = value.parse().unwrap_or(7),
+            "10" => line.x1 = value.parse().unwrap_or(0.0),
+            "20" => line.y1 = value.parse().unwrap_or(0.0),
+            "11" => line.x2 = value.parse().unwrap_or(0.0),
+            "21" => line.y2 = value.parse().unwrap_or(0.0),
+            _ => {} // skip handles, subclass markers, etc.
+        }
+        i += 2;
+    }
+
+    (line, i)
+}
+
+fn parse_text_entity(lines: &[&str], start: usize) -> (DxfText, usize) {
+    let mut text = DxfText::default();
+    let mut i = start;
+
+    while i + 1 < lines.len() {
+        let code = lines[i];
+        let value = lines[i + 1];
+
+        if code == "0" {
+            break;
+        }
+
+        match code {
+            "8" => text.layer = value.to_string(),
+            "62" => text.color = value.parse().unwrap_or(7),
+            "10" => text.x = value.parse().unwrap_or(0.0),
+            "20" => text.y = value.parse().unwrap_or(0.0),
+            "40" => text.height = value.parse().unwrap_or(1.0),
+            "1" => text.text = value.to_string(),
+            "50" => text.rotation = value.parse().unwrap_or(0.0),
+            "72" => {
+                text.align_h = match value.parse().unwrap_or(0) {
+                    1 => HorizontalAlignment::Center,
+                    2 => HorizontalAlignment::Right,
+                    _ => HorizontalAlignment::Left,
+                };
+            }
+            "73" => {
+                text.align_v = match value.parse().unwrap_or(0) {
+                    1 => VerticalAlignment::Bottom,
+                    2 => VerticalAlignment::Middle,
+                    3 => VerticalAlignment::Top,
+                    _ => VerticalAlignment::Baseline,
+                };
+            }
+            _ => {}
+        }
+        i += 2;
+    }
+
+    (text, i)
+}
+
+fn parse_circle_entity(lines: &[&str], start: usize) -> (DxfCircle, usize) {
+    let mut circle = DxfCircle::default();
+    let mut i = start;
+
+    while i + 1 < lines.len() {
+        let code = lines[i];
+        let value = lines[i + 1];
+
+        if code == "0" {
+            break;
+        }
+
+        match code {
+            "8" => circle.layer = value.to_string(),
+            "62" => circle.color = value.parse().unwrap_or(7),
+            "10" => circle.x = value.parse().unwrap_or(0.0),
+            "20" => circle.y = value.parse().unwrap_or(0.0),
+            "40" => circle.radius = value.parse().unwrap_or(1.0),
+            _ => {}
+        }
+        i += 2;
+    }
+
+    (circle, i)
+}
+
+fn parse_lwpolyline_entity(lines: &[&str], start: usize) -> (DxfLwPolyline, usize) {
+    let mut poly = DxfLwPolyline::default();
+    let mut i = start;
+    let mut current_x: Option<f64> = None;
+
+    while i + 1 < lines.len() {
+        let code = lines[i];
+        let value = lines[i + 1];
+
+        if code == "0" {
+            break;
+        }
+
+        match code {
+            "8" => poly.layer = value.to_string(),
+            "62" => poly.color = value.parse().unwrap_or(7),
+            "70" => poly.closed = value.parse().unwrap_or(0) == 1,
+            "10" => {
+                // Flush previous vertex if we have a pending x
+                if let Some(x) = current_x {
+                    poly.vertices.push((x, 0.0)); // y=0 fallback
+                }
+                current_x = Some(value.parse().unwrap_or(0.0));
+            }
+            "20" => {
+                if let Some(x) = current_x.take() {
+                    let y: f64 = value.parse().unwrap_or(0.0);
+                    poly.vertices.push((x, y));
+                }
+            }
+            _ => {}
+        }
+        i += 2;
+    }
+
+    // Flush last vertex if pending
+    if let Some(x) = current_x {
+        poly.vertices.push((x, 0.0));
+    }
+
+    (poly, i)
 }
 
 #[cfg(test)]
