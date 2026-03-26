@@ -751,4 +751,78 @@ zumennum, 1
         assert_eq!(result.triangles.len(), 100);
         assert_eq!(result.triangles[99].number, 100);
     }
+
+    // ================================================================
+    // FAILING: FULL format (28 columns) — fields beyond col 6 are silently ignored
+    // The parser treats >=6 cols as CONN format, discarding cols 7-28.
+    // These tests document the expected behavior for FULL format.
+    // ================================================================
+
+    #[test]
+    fn test_parse_full_format_28_columns() {
+        // FULL format: number, A, B, C, parent, conn_type, name, px1, py1, px2, py2, px3, py3,
+        //   color, dimA_align, dimB_align, dimC_align, angle, ...
+        // For now, at minimum the first 6 fields should parse correctly
+        let csv = "\
+koujiname, FULL形式テスト
+rosenname, テスト路線
+gyousyaname, テスト業者
+zumennum, 1
+1, 6.0, 5.0, 4.0, -1, -1, 三角形1, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+2, 5.0, 4.0, 3.0, 1, 1, 三角形2, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+";
+        let result = parse_csv(csv).unwrap();
+        assert_eq!(result.triangles.len(), 2);
+        assert_eq!(result.triangles[0].number, 1);
+        assert_eq!(result.triangles[0].length_a, 6.0);
+        assert_eq!(result.triangles[1].parent_number, 1);
+        assert_eq!(result.triangles[1].connection_type, 1);
+    }
+
+    #[test]
+    fn test_parse_scientific_notation_in_lengths() {
+        let csv = "koujiname, test\nrosenname, test\ngyousyaname, test\nzumennum, 1\n\
+1, 1.5e2, 1.0e2, 8.0e1\n";
+        let result = parse_csv(csv).unwrap();
+        assert_eq!(result.triangles[0].length_a, 150.0);
+        assert_eq!(result.triangles[0].length_b, 100.0);
+        assert_eq!(result.triangles[0].length_c, 80.0);
+    }
+
+    #[test]
+    fn test_parse_negative_zero_in_lengths() {
+        let csv = "koujiname, test\nrosenname, test\ngyousyaname, test\nzumennum, 1\n\
+1, -0.0, 5.0, 4.0\n";
+        // -0.0 is a valid finite f64, should parse successfully
+        let result = parse_csv(csv).unwrap();
+        assert_eq!(result.triangles[0].length_a, 0.0);
+    }
+
+    #[test]
+    fn test_parse_trailing_comma_creates_empty_col() {
+        // Trailing comma means one extra empty column
+        let csv = "koujiname, test\nrosenname, test\ngyousyaname, test\nzumennum, 1\n\
+1, 6.0, 5.0, 4.0,\n";
+        // 5 columns: should be treated as MIN+extra (col_count >= 4 but < 6)
+        let result = parse_csv(csv);
+        // Column 5 is empty string, parent_number parse will fail if >=6
+        // With exactly 5 columns, code does (-1, -1) since col_count < 6
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_nan_rejected() {
+        let csv = "koujiname, test\nrosenname, test\ngyousyaname, test\nzumennum, 1\n\
+1, NaN, 5.0, 4.0\n";
+        let result = parse_csv(csv);
+        assert!(result.is_err(), "NaN should be rejected by parse_finite_f64");
+    }
+
+    #[test]
+    fn test_parse_infinity_rejected() {
+        let csv = "koujiname, test\nrosenname, test\ngyousyaname, test\nzumennum, 1\n\
+1, inf, 5.0, 4.0\n";
+        let result = parse_csv(csv);
+        assert!(result.is_err(), "Infinity should be rejected by parse_finite_f64");
+    }
 }

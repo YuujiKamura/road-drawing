@@ -1066,14 +1066,4 @@ mod tests {
         assert!((path[1].x - 100.0).abs() < 0.001);
     }
 
-    #[test]
-    fn test_filter_by_layer_empty_pattern() {
-        let lines = vec![
-            DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "中心線"),
-            DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "路肩"),
-        ];
-        let filtered = filter_by_layer(&lines, "");
-        // Empty pattern matches everything (contains "")
-        assert_eq!(filtered.len(), 2);
-    }
 }

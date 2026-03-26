@@ -686,4 +686,199 @@ mod tests {
             .find(|t| t.text == "15.50");
         assert!(dist_text.is_some(), "Should have distance dimension text '15.50'");
     }
+
+    // ================================================================
+    // Custom scale factors
+    // ================================================================
+
+    #[test]
+    fn test_custom_scale_factor_500() {
+        let stations = vec![
+            StationData::new("No.0", 0.0, 2.0, 3.0),
+            StationData::new("No.1", 10.0, 2.0, 3.0),
+        ];
+        let config = RoadSectionConfig { scale: 500.0, ..Default::default() };
+        let geometry = calculate_road_section(&stations, &config);
+
+        // x should be scaled by 500: station at 10m → 5000mm
+        let has_x_5000 = geometry.lines.iter().any(|l| (l.x1 - 5000.0).abs() < 0.01 || (l.x2 - 5000.0).abs() < 0.01);
+        assert!(has_x_5000, "Station at 10m with scale=500 should produce x=5000");
+
+        // Left width 2.0m → 1000mm
+        let has_wl_1000 = geometry.lines.iter().any(|l| (l.y1 - 1000.0).abs() < 0.01 || (l.y2 - 1000.0).abs() < 0.01);
+        assert!(has_wl_1000, "Width 2.0m with scale=500 should produce y=1000");
+    }
+
+    #[test]
+    fn test_custom_scale_factor_very_small() {
+        let stations = vec![
+            StationData::new("No.0", 0.0, 2.5, 2.5),
+            StationData::new("No.1", 10.0, 2.5, 2.5),
+        ];
+        let config = RoadSectionConfig { scale: 0.1, ..Default::default() };
+        let geometry = calculate_road_section(&stations, &config);
+
+        // x should be 10.0 * 0.1 = 1.0
+        let has_x_1 = geometry.lines.iter().any(|l| (l.x1 - 1.0).abs() < 0.01 || (l.x2 - 1.0).abs() < 0.01);
+        assert!(has_x_1, "Station at 10m with scale=0.1 should produce x=1.0");
+    }
+
+    #[test]
+    fn test_custom_scale_factor_large() {
+        let stations = vec![
+            StationData::new("No.0", 0.0, 1.0, 1.0),
+            StationData::new("No.1", 5.0, 1.0, 1.0),
+        ];
+        let config = RoadSectionConfig { scale: 10000.0, ..Default::default() };
+        let geometry = calculate_road_section(&stations, &config);
+
+        // x should be 5.0 * 10000 = 50000
+        let has_x_50000 = geometry.lines.iter().any(|l| (l.x1 - 50000.0).abs() < 0.01 || (l.x2 - 50000.0).abs() < 0.01);
+        assert!(has_x_50000, "Station at 5m with scale=10000 should produce x=50000");
+    }
+
+    // ================================================================
+    // Negative coordinates
+    // ================================================================
+
+    #[test]
+    fn test_negative_x_coordinates() {
+        // Stations with negative cumulative distances (unusual but valid)
+        let stations = vec![
+            StationData::new("No.-2", -20.0, 2.0, 2.0),
+            StationData::new("No.-1", -10.0, 2.0, 2.0),
+            StationData::new("No.0", 0.0, 2.0, 2.0),
+        ];
+        let config = RoadSectionConfig::default();
+        let geometry = calculate_road_section(&stations, &config);
+
+        // Should have lines at x = -20000, -10000, 0
+        let has_neg_x = geometry.lines.iter().any(|l| l.x1 < -1.0 || l.x2 < -1.0);
+        assert!(has_neg_x, "Negative x stations should produce negative coordinates");
+    }
+
+    #[test]
+    fn test_station_at_origin() {
+        let stations = vec![
+            StationData::new("No.0", 0.0, 0.0, 0.0),
+        ];
+        let config = RoadSectionConfig::default();
+        let geometry = calculate_road_section(&stations, &config);
+
+        // Single station with zero widths: should still generate width lines (center to 0)
+        assert!(!geometry.lines.is_empty(), "Single station should generate at least width lines");
+    }
+
+    // ================================================================
+    // Very small distances between stations
+    // ================================================================
+
+    #[test]
+    fn test_very_small_distance_between_stations() {
+        let stations = vec![
+            StationData::new("No.0", 0.0, 2.5, 2.5),
+            StationData::new("No.0+0.001", 0.001, 2.5, 2.5),
+        ];
+        let config = RoadSectionConfig::default();
+        let geometry = calculate_road_section(&stations, &config);
+
+        // 0.001m * 1000 = 1.0mm distance
+        // Should still generate geometry (distance > 0)
+        assert!(!geometry.lines.is_empty());
+
+        // Distance dimension should show "0.00" (0.001 rounds to 0.00 at 2dp)
+        let dist_text = geometry.texts.iter()
+            .find(|t| t.text == "0.00");
+        assert!(dist_text.is_some(),
+            "Very small distance (0.001m) should produce dimension text '0.00'");
+    }
+
+    #[test]
+    fn test_zero_distance_between_stations() {
+        // Two stations at same distance (degenerate case)
+        let stations = vec![
+            StationData::new("No.0", 0.0, 2.5, 2.5),
+            StationData::new("No.0dup", 0.0, 3.0, 3.0),
+        ];
+        let config = RoadSectionConfig::default();
+        let geometry = calculate_road_section(&stations, &config);
+
+        // distance = 0 → the code skips connection lines (distance > 0.0 check)
+        // Should still have width lines for both stations
+        let center_x0_lines: Vec<_> = geometry.lines.iter()
+            .filter(|l| (l.x1).abs() < 0.01 && (l.x2).abs() < 0.01)
+            .collect();
+        assert!(center_x0_lines.len() >= 4,
+            "Two stations at x=0 should still have width lines for both, got {}",
+            center_x0_lines.len());
+    }
+
+    #[test]
+    fn test_reversed_x_values() {
+        // Stations in decreasing x order
+        let stations = vec![
+            StationData::new("No.2", 20.0, 2.5, 2.5),
+            StationData::new("No.1", 10.0, 2.5, 2.5),
+            StationData::new("No.0", 0.0, 2.5, 2.5),
+        ];
+        let config = RoadSectionConfig::default();
+        let geometry = calculate_road_section(&stations, &config);
+
+        // distance between consecutive stations is negative → skips connection
+        // Width lines should still exist for all 3 stations
+        // But no connecting lines or distance dimensions
+        let station_name_texts: Vec<_> = geometry.texts.iter()
+            .filter(|t| t.color == 5) // blue = station names
+            .collect();
+        assert_eq!(station_name_texts.len(), 3,
+            "All 3 station names should appear even if x is reversed");
+    }
+
+    // ================================================================
+    // CSV parsing edge cases
+    // ================================================================
+
+    #[test]
+    fn test_parse_csv_comment_lines() {
+        let csv = "測点名,累積延長,左幅員,右幅員\n# This is a comment\nNo.1,0.0,2.5,2.5\n";
+        let result = parse_road_section_csv(csv);
+        assert!(result.is_ok());
+        let stations = result.unwrap();
+        assert_eq!(stations.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_csv_missing_x_value() {
+        let csv = "測点名,累積延長,左幅員,右幅員\nNo.1,abc,2.5,2.5\n";
+        let result = parse_road_section_csv(csv);
+        assert!(result.is_err(), "Non-numeric x value should produce an error");
+    }
+
+    #[test]
+    fn test_parse_csv_missing_width_defaults_to_zero() {
+        let csv = "測点名,累積延長,左幅員,右幅員\nNo.1,0.0,abc,def\n";
+        let result = parse_road_section_csv(csv);
+        assert!(result.is_ok());
+        let stations = result.unwrap();
+        assert_eq!(stations[0].wl, 0.0, "Invalid left width should default to 0.0");
+        assert_eq!(stations[0].wr, 0.0, "Invalid right width should default to 0.0");
+    }
+
+    #[test]
+    fn test_geometry_to_dxf_lint_valid() {
+        use dxf_engine::{DxfWriter, DxfLinter};
+
+        let stations = vec![
+            StationData::new("No.0", 0.0, 2.5, 2.5),
+            StationData::new("No.1", 20.0, 3.0, 2.0),
+        ];
+        let config = RoadSectionConfig::default();
+        let geometry = calculate_road_section(&stations, &config);
+        let (lines, texts) = geometry_to_dxf(&geometry);
+
+        let writer = DxfWriter::new();
+        let dxf_content = writer.write(&lines, &texts);
+        assert!(DxfLinter::is_valid(&dxf_content),
+            "Generated road section DXF must pass linter validation");
+    }
 }
