@@ -415,4 +415,124 @@ No.0,0,0.8,,
         let e2 = ParseError::InvalidFormat("test error".to_string());
         assert!(format!("{}", e2).contains("test error"));
     }
+
+    // ================================================================
+    // Shift_JIS encoded CSV file
+    // ================================================================
+
+    #[test]
+    fn test_extract_shift_jis_csv_file() {
+        use std::io::Write;
+
+        // Build CSV content with Japanese headers, encode to Shift_JIS
+        let csv_utf8 = "測点名,単延長L,幅員W,平均幅員Wa,面積m2\nNo.0,0,1.5,,\n0+5,5.0,1.2,,\n";
+        let (encoded, _, _) = encoding_rs::SHIFT_JIS.encode(csv_utf8);
+
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_sjis_section.csv");
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(&encoded).unwrap();
+        drop(f);
+
+        let rows = extract_section_data_from_file(&path, "区間1").unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].name, "No.0");
+        assert!((rows[0].wl - 1.5).abs() < 1e-9);
+        assert!((rows[1].x - 5.0).abs() < 1e-9);
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_get_sections_shift_jis_file() {
+        use std::io::Write;
+
+        let csv_utf8 = "区間2,台形計算,,,\n測点名,単延長L,幅員W,平均幅員Wa,面積m2\nNo.0,0,0.8,,\n";
+        let (encoded, _, _) = encoding_rs::SHIFT_JIS.encode(csv_utf8);
+
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_sjis_sections.csv");
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(&encoded).unwrap();
+        drop(f);
+
+        let sections = get_available_sections_from_file(&path);
+        assert_eq!(sections, vec!["区間2"]);
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    // ================================================================
+    // Section with header but no data rows → NoData error
+    // ================================================================
+
+    #[test]
+    fn test_extract_section_header_only_no_data() {
+        let text = "\
+区間1,台形計算,,,
+測点名,単延長L,幅員W,平均幅員Wa,面積m2
+";
+        let result = extract_section_data(text, "区間1");
+        assert!(result.is_err(), "Section with header but no data rows should error");
+    }
+
+    #[test]
+    fn test_extract_section_header_only_comments() {
+        // Header + only comment/blank lines → no valid rows
+        let text = "\
+区間1,台形計算,,,
+測点名,単延長L,幅員W,平均幅員Wa,面積m2
+# comment line
+# another comment
+";
+        let result = extract_section_data(text, "区間1");
+        assert!(result.is_err(), "Section with only comments after header should error");
+    }
+
+    #[test]
+    fn test_extract_section_all_non_numeric_x() {
+        // Header + rows where x column is non-numeric → all skipped → NoData
+        let text = "\
+区間1,台形計算,,,
+測点名,単延長L,幅員W,平均幅員Wa,面積m2
+No.0,abc,1.0,,
+No.1,def,2.0,,
+";
+        let result = extract_section_data(text, "区間1");
+        assert!(result.is_err(), "All non-numeric x values should yield NoData");
+    }
+
+    // ================================================================
+    // Duplicate section names: extract picks first occurrence
+    // ================================================================
+
+    #[test]
+    fn test_extract_duplicate_section_picks_first() {
+        let text = "\
+区間1,台形計算,,,
+測点名,単延長L,幅員W,平均幅員Wa,面積m2
+No.0,0,1.0,,
+,5.0,1.5,,
+区間1,台形計算,,,
+測点名,単延長L,幅員W,平均幅員Wa,面積m2
+No.5,0,9.0,,
+,3.0,8.0,,
+";
+        // Regex `区間1,台形計算...(until next 区間 or end)` captures FIRST block
+        let rows = extract_section_data(text, "区間1").unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!((rows[0].wl - 1.0).abs() < 1e-9,
+            "Should extract first 区間1 block (wl=1.0), got wl={}", rows[0].wl);
+    }
+
+    #[test]
+    fn test_get_sections_duplicate_names_count() {
+        // Both occurrences are listed (caller can deduplicate if needed)
+        let text = "区間1,台形計算,,,\ndata\n区間1,台形計算,,,\ndata\n区間2,台形計算,,,\n";
+        let sections = get_available_sections(text, "sheet.csv");
+        assert_eq!(sections.len(), 3, "Should list all occurrences including duplicates");
+        assert_eq!(sections[0], "区間1");
+        assert_eq!(sections[1], "区間1");
+        assert_eq!(sections[2], "区間2");
+    }
 }
