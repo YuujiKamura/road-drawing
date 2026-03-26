@@ -621,4 +621,76 @@ mod tests {
         };
         assert_ne!(cmd1, cmd2);
     }
+
+    // ================================================================
+    // Unicode station names in params
+    // ================================================================
+
+    #[test]
+    fn test_parse_command_unicode_layer_name() {
+        let json = r#"{"type": "crosswalk", "params": {"layer": "横断歩道・第１"}}"#;
+        let cmd = parse_command(json).unwrap();
+        assert_eq!(cmd.params.get("layer"), Some(&"横断歩道・第１".to_string()));
+    }
+
+    #[test]
+    fn test_parse_command_unicode_station_param() {
+        let json = r#"{"type": "crosswalk", "params": {"station": "No.3＋10.5", "centerlineLayer": "中心線"}}"#;
+        let cmd = parse_command(json).unwrap();
+        assert_eq!(cmd.params.get("station"), Some(&"No.3＋10.5".to_string()));
+        assert_eq!(cmd.params.get("centerlineLayer"), Some(&"中心線".to_string()));
+    }
+
+    #[test]
+    fn test_parse_command_list_unicode_mixed() {
+        let json = r#"{"commands": [
+            {"type": "crosswalk", "params": {"layer": "横断歩道", "startOffset": "5000"}},
+            {"type": "crosswalk", "params": {"layer": "区画線・白", "startOffset": "15000"}}
+        ]}"#;
+        let cmds = parse_command_list(json);
+        assert_eq!(cmds.len(), 2);
+        assert_eq!(cmds[0].params.get("layer"), Some(&"横断歩道".to_string()));
+        assert_eq!(cmds[1].params.get("layer"), Some(&"区画線・白".to_string()));
+    }
+
+    #[test]
+    fn test_execute_crosswalk_unicode_layer_propagates() {
+        let centerlines = vec![DxfLine::new(0.0, 0.0, 20000.0, 0.0)];
+        let cmd = MarkingCommand {
+            command_type: "crosswalk".to_string(),
+            params: [
+                ("stripeCount".to_string(), "1".to_string()),
+                ("layer".to_string(), "横断歩道・第２".to_string()),
+            ].into_iter().collect(),
+        };
+        let result = execute_command(&cmd, &centerlines);
+        assert_eq!(result.lines.len(), 4);
+        assert!(result.lines.iter().all(|l| l.layer == "横断歩道・第２"),
+            "Unicode layer name must propagate to all generated DXF lines");
+    }
+
+    // ================================================================
+    // Generate + Lint roundtrip via command executor
+    // ================================================================
+
+    #[test]
+    fn test_execute_crosswalk_lint_roundtrip() {
+        use dxf_engine::{DxfWriter, DxfLinter};
+
+        let centerlines = vec![DxfLine::new(0.0, 0.0, 20000.0, 0.0)];
+        let cmd = MarkingCommand {
+            command_type: "crosswalk".to_string(),
+            params: [
+                ("stripeCount".to_string(), "7".to_string()),
+                ("layer".to_string(), "横断歩道".to_string()),
+            ].into_iter().collect(),
+        };
+        let result = execute_command(&cmd, &centerlines);
+        assert_eq!(result.lines.len(), 28);
+
+        let writer = DxfWriter::new();
+        let dxf_content = writer.write(&result.lines, &[]);
+        assert!(DxfLinter::is_valid(&dxf_content),
+            "Command-generated crosswalk DXF must pass linter");
+    }
 }

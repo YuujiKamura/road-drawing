@@ -801,4 +801,279 @@ mod tests {
         let result = generate_crosswalk(&centerlines, &config);
         assert_eq!(result.len(), 400, "100 stripes × 4 lines = 400");
     }
+
+    // ================================================================
+    // Angled centerline: 30 degrees
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_angled_30deg() {
+        // 30° road: tan(30°)=1/√3, so rise/run ≈ 0.577
+        let run = 10000.0_f64;
+        let rise = run * (std::f64::consts::PI / 6.0).tan(); // ≈ 5773.5
+        let centerlines = vec![DxfLine::new(0.0, 0.0, run, rise)];
+        let config = CrosswalkConfig {
+            start_offset: 5000.0,
+            stripe_length: 4000.0,
+            stripe_width: 450.0,
+            stripe_count: 3,
+            stripe_spacing: 450.0,
+            layer: "横断歩道".to_string(),
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 12, "3 stripes × 4 lines on 30° road");
+
+        // Stripes should be perpendicular to 30° direction (i.e. at 120°)
+        // Verify they span both sides of the centerline path
+        let ref_pt = point_at_distance(
+            &build_centerline_path(&centerlines), 5000.0,
+        ).unwrap();
+
+        // Check that stripe corners are distributed around the ref point
+        let all_x: Vec<f64> = result.iter().flat_map(|l| vec![l.x1, l.x2]).collect();
+        let all_y: Vec<f64> = result.iter().flat_map(|l| vec![l.y1, l.y2]).collect();
+        let min_x = all_x.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max_x = all_x.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let min_y = all_y.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max_y = all_y.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+        // The stripe group should straddle the reference point
+        assert!(min_x < ref_pt.x && max_x > ref_pt.x,
+            "Stripes should straddle ref X={}: min={}, max={}", ref_pt.x, min_x, max_x);
+        assert!(min_y < ref_pt.y && max_y > ref_pt.y,
+            "Stripes should straddle ref Y={}: min={}, max={}", ref_pt.y, min_y, max_y);
+    }
+
+    // ================================================================
+    // Angled centerline: 60 degrees
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_angled_60deg() {
+        let run = 10000.0_f64;
+        let rise = run * (std::f64::consts::PI / 3.0).tan(); // ≈ 17320.5
+        let centerlines = vec![DxfLine::new(0.0, 0.0, run, rise)];
+        let config = CrosswalkConfig {
+            start_offset: 5000.0,
+            stripe_length: 4000.0,
+            stripe_width: 450.0,
+            stripe_count: 3,
+            stripe_spacing: 450.0,
+            layer: "横断歩道".to_string(),
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 12, "3 stripes × 4 lines on 60° road");
+
+        // Perpendicular to 60° road = 150° direction
+        // On a steep road, stripes extend more in X than Y
+        let ref_pt = point_at_distance(
+            &build_centerline_path(&centerlines), 5000.0,
+        ).unwrap();
+
+        // Stripe length = 4000, so perpendicular extent = ±2000 from center
+        // At 60° road, perpendicular is at -30° from X axis
+        // Perpendicular X component = cos(150°) ≈ -0.866, so X extent ≈ 2*2000*0.866 = 3464
+        let all_x: Vec<f64> = result.iter().flat_map(|l| vec![l.x1, l.x2]).collect();
+        let x_extent = all_x.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+            - all_x.iter().cloned().fold(f64::INFINITY, f64::min);
+        // X extent should be significant (not near-zero like it would be for a horizontal road)
+        assert!(x_extent > 3000.0,
+            "60° road stripes should have large X extent: got {}", x_extent);
+    }
+
+    // ================================================================
+    // Angled centerline: exact 90 degrees — stripe symmetry check
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_angled_90deg_symmetry() {
+        // Vertical road (0,0)→(0,20000)
+        let centerlines = vec![DxfLine::new(0.0, 0.0, 0.0, 20000.0)];
+        let config = CrosswalkConfig {
+            start_offset: 10000.0,
+            stripe_length: 4000.0,
+            stripe_width: 450.0,
+            stripe_count: 7,
+            stripe_spacing: 450.0,
+            layer: "横断歩道".to_string(),
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 28, "7 stripes on vertical road");
+
+        // On vertical road: stripes extend in X (perpendicular), spread in Y (road dir)
+        // X should be symmetric around 0
+        let all_x: Vec<f64> = result.iter().flat_map(|l| vec![l.x1, l.x2]).collect();
+        let min_x = all_x.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max_x = all_x.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        assert!((min_x + max_x).abs() < 1.0,
+            "Stripes on vertical road must be X-symmetric: min={}, max={}", min_x, max_x);
+
+        // Y should be symmetric around offset=10000
+        let all_y: Vec<f64> = result.iter().flat_map(|l| vec![l.y1, l.y2]).collect();
+        let avg_y: f64 = all_y.iter().sum::<f64>() / all_y.len() as f64;
+        assert!((avg_y - 10000.0).abs() < 1.0,
+            "Stripes should center around Y=10000: avg={}", avg_y);
+    }
+
+    // ================================================================
+    // Generate + DxfLinter roundtrip
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_generate_lint_roundtrip() {
+        use dxf_engine::{DxfWriter, DxfLinter};
+
+        let centerlines = horizontal_centerline();
+        let config = CrosswalkConfig::default();
+        let lines = generate_crosswalk(&centerlines, &config);
+        assert!(!lines.is_empty());
+
+        // Write to DXF string and validate with linter
+        let writer = DxfWriter::new();
+        let dxf_content = writer.write(&lines, &[]);
+        assert!(DxfLinter::is_valid(&dxf_content),
+            "Generated crosswalk DXF must pass linter validation");
+    }
+
+    #[test]
+    fn test_crosswalk_angled_generate_lint_roundtrip() {
+        use dxf_engine::{DxfWriter, DxfLinter};
+
+        // 30° road
+        let run = 10000.0_f64;
+        let rise = run * (std::f64::consts::PI / 6.0).tan();
+        let centerlines = vec![DxfLine::new(0.0, 0.0, run, rise)];
+        let config = CrosswalkConfig {
+            start_offset: 3000.0,
+            stripe_count: 5,
+            ..CrosswalkConfig::default()
+        };
+        let lines = generate_crosswalk(&centerlines, &config);
+
+        let writer = DxfWriter::new();
+        let dxf_content = writer.write(&lines, &[]);
+        assert!(DxfLinter::is_valid(&dxf_content),
+            "Angled crosswalk DXF must pass linter validation");
+    }
+
+    #[test]
+    fn test_crosswalk_vertical_generate_lint_roundtrip() {
+        use dxf_engine::{DxfWriter, DxfLinter};
+
+        let centerlines = vec![DxfLine::new(0.0, 0.0, 0.0, 20000.0)];
+        let config = CrosswalkConfig {
+            start_offset: 10000.0,
+            stripe_count: 3,
+            ..CrosswalkConfig::default()
+        };
+        let lines = generate_crosswalk(&centerlines, &config);
+
+        let writer = DxfWriter::new();
+        let dxf_content = writer.write(&lines, &[]);
+        assert!(DxfLinter::is_valid(&dxf_content),
+            "Vertical road crosswalk DXF must pass linter validation");
+    }
+
+    // ================================================================
+    // Zero/extreme stripe parameter edge cases
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_zero_stripe_width() {
+        let centerlines = horizontal_centerline();
+        let config = CrosswalkConfig {
+            start_offset: 10000.0,
+            stripe_width: 0.0,
+            stripe_count: 3,
+            ..CrosswalkConfig::default()
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        // Zero-width stripes should still generate 3×4=12 lines (degenerate rectangles)
+        assert_eq!(result.len(), 12, "zero-width stripes should still generate geometry");
+    }
+
+    #[test]
+    fn test_crosswalk_zero_stripe_spacing() {
+        let centerlines = horizontal_centerline();
+        let config = CrosswalkConfig {
+            start_offset: 10000.0,
+            stripe_spacing: 0.0,
+            stripe_count: 3,
+            stripe_width: 450.0,
+            ..CrosswalkConfig::default()
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 12, "3 stripes × 4 lines = 12 with zero spacing");
+    }
+
+    #[test]
+    fn test_crosswalk_zero_stripe_length() {
+        let centerlines = horizontal_centerline();
+        let config = CrosswalkConfig {
+            start_offset: 10000.0,
+            stripe_length: 0.0,
+            stripe_count: 1,
+            ..CrosswalkConfig::default()
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 4, "zero-length stripe should still generate 4 degenerate lines");
+    }
+
+    #[test]
+    fn test_crosswalk_negative_stripe_length() {
+        let centerlines = horizontal_centerline();
+        let config = CrosswalkConfig {
+            start_offset: 10000.0,
+            stripe_length: -4000.0,
+            stripe_count: 1,
+            ..CrosswalkConfig::default()
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        // Negative length inverts corners but still produces valid geometry
+        assert_eq!(result.len(), 4);
+    }
+
+    #[test]
+    fn test_crosswalk_very_large_stripe_count_1000() {
+        let centerlines = horizontal_centerline();
+        let config = CrosswalkConfig {
+            start_offset: 10000.0,
+            stripe_count: 1000,
+            stripe_width: 10.0,
+            stripe_spacing: 5.0,
+            ..CrosswalkConfig::default()
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 4000, "1000 stripes × 4 lines = 4000");
+    }
+
+    #[test]
+    fn test_point_at_distance_negative() {
+        let path = vec![
+            PathPoint { x: 0.0, y: 0.0 },
+            PathPoint { x: 100.0, y: 0.0 },
+        ];
+        let pt = point_at_distance(&path, -10.0);
+        assert!(pt.is_some(), "negative distance should return a point (fallback)");
+    }
+
+    #[test]
+    fn test_build_centerline_path_single_line() {
+        let lines = vec![DxfLine::new(0.0, 0.0, 100.0, 0.0)];
+        let path = build_centerline_path(&lines);
+        assert_eq!(path.len(), 2);
+        assert!((path[0].x - 0.0).abs() < 0.001);
+        assert!((path[1].x - 100.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_filter_by_layer_empty_pattern() {
+        let lines = vec![
+            DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "中心線"),
+            DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "路肩"),
+        ];
+        let filtered = filter_by_layer(&lines, "");
+        // Empty pattern matches everything (contains "")
+        assert_eq!(filtered.len(), 2);
+    }
 }
