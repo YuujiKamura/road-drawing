@@ -218,3 +218,92 @@ fn dxf_color_to_egui(color: i32) -> Color32 {
         _ => Color32::LIGHT_GRAY,
     }
 }
+
+/// Decode bytes to string: try UTF-8 first, fall back to Shift_JIS.
+/// Extracted for testability.
+pub fn decode_csv_bytes(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => s.to_string(),
+        Err(_) => {
+            let (decoded, _, _) = encoding_rs::SHIFT_JIS.decode(bytes);
+            decoded.into_owned()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ================================================================
+    // decode_csv_bytes — encoding detection
+    // ================================================================
+
+    #[test]
+    fn test_decode_utf8_csv() {
+        let csv = "測点名,累積延長,左幅員,右幅員\nNo.1,0.0,2.5,2.5\n";
+        let decoded = decode_csv_bytes(csv.as_bytes());
+        assert_eq!(decoded, csv);
+    }
+
+    #[test]
+    fn test_decode_ascii_csv() {
+        let csv = "name,x,wl,wr\nNo.1,0.0,2.5,2.5\n";
+        let decoded = decode_csv_bytes(csv.as_bytes());
+        assert_eq!(decoded, csv);
+    }
+
+    #[test]
+    fn test_decode_shift_jis_csv() {
+        // "測点名" in Shift_JIS: 0x91AA 0x935F 0x96BC
+        let sjis_bytes: Vec<u8> = {
+            let (encoded, _, _) = encoding_rs::SHIFT_JIS.encode("測点名,延長\nNo.1,10.0\n");
+            encoded.into_owned()
+        };
+        let decoded = decode_csv_bytes(&sjis_bytes);
+        assert!(decoded.contains("測点名"), "Should decode Shift_JIS to UTF-8");
+        assert!(decoded.contains("No.1"));
+    }
+
+    #[test]
+    fn test_decode_empty_bytes() {
+        let decoded = decode_csv_bytes(b"");
+        assert_eq!(decoded, "");
+    }
+
+    // ================================================================
+    // decode + parse roundtrip
+    // ================================================================
+
+    #[test]
+    fn test_decode_and_parse_utf8_csv() {
+        let csv = "測点名,累積延長,左幅員,右幅員\nNo.0,0.0,2.5,2.5\nNo.1,20.0,3.0,2.0\n";
+        let text = decode_csv_bytes(csv.as_bytes());
+        let stations = road_section::parse_road_section_csv(&text).unwrap();
+        assert_eq!(stations.len(), 2);
+        assert_eq!(stations[0].name, "No.0");
+        assert_eq!(stations[1].wr, 2.0);
+    }
+
+    #[test]
+    fn test_decode_and_parse_shift_jis_csv() {
+        let csv_utf8 = "測点名,累積延長,左幅員,右幅員\nNo.0,0.0,1.5,1.5\n";
+        let (sjis_bytes, _, _) = encoding_rs::SHIFT_JIS.encode(csv_utf8);
+        let text = decode_csv_bytes(&sjis_bytes);
+        let stations = road_section::parse_road_section_csv(&text).unwrap();
+        assert_eq!(stations.len(), 1);
+        assert_eq!(stations[0].wl, 1.5);
+    }
+
+    // ================================================================
+    // dxf_color_to_egui (app-local copy)
+    // ================================================================
+
+    #[test]
+    fn test_app_dxf_color_all_indices() {
+        assert_eq!(dxf_color_to_egui(1), Color32::RED);
+        assert_eq!(dxf_color_to_egui(5), Color32::from_rgb(0, 128, 255));
+        assert_eq!(dxf_color_to_egui(7), Color32::WHITE);
+        assert_eq!(dxf_color_to_egui(99), Color32::LIGHT_GRAY);
+    }
+}

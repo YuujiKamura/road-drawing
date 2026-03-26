@@ -3,6 +3,7 @@
 //! Provides browser-based CSV/Excel drag-and-drop → DXF preview → download.
 
 mod app;
+pub mod dxf_export;
 pub mod renderer;
 
 pub use app::RoadDrawingApp;
