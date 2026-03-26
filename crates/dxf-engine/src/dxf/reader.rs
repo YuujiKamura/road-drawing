@@ -867,4 +867,247 @@ mod tests {
         let doc = parse_dxf(dxf).unwrap();
         assert_eq!(doc.lines.len(), 1);
     }
+
+    // ================================================================
+    // LWPOLYLINE parsing edge cases
+    // ================================================================
+
+    #[test]
+    fn test_parse_lwpolyline_open_with_vertices() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n\
+0\nLWPOLYLINE\n90\n4\n70\n0\n43\n0.0\n\
+10\n0.0\n20\n0.0\n\
+10\n100.0\n20\n0.0\n\
+10\n100.0\n20\n100.0\n\
+10\n0.0\n20\n100.0\n\
+0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.polylines.len(), 1);
+        assert_eq!(doc.polylines[0].vertices.len(), 4);
+        assert!(!doc.polylines[0].closed);
+        assert!((doc.polylines[0].vertices[0].0 - 0.0).abs() < 0.001);
+        assert!((doc.polylines[0].vertices[1].0 - 100.0).abs() < 0.001);
+        assert!((doc.polylines[0].vertices[2].1 - 100.0).abs() < 0.001);
+        assert!((doc.polylines[0].vertices[3].0 - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_lwpolyline_closed_flag() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n\
+0\nLWPOLYLINE\n90\n3\n70\n1\n\
+10\n0.0\n20\n0.0\n\
+10\n10.0\n20\n0.0\n\
+10\n5.0\n20\n8.66\n\
+0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert!(doc.polylines[0].closed);
+        assert_eq!(doc.polylines[0].vertices.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_lwpolyline_with_layer_and_color() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n\
+0\nLWPOLYLINE\n8\n外枠\n62\n3\n90\n2\n70\n0\n\
+10\n0.0\n20\n0.0\n\
+10\n50.0\n20\n50.0\n\
+0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.polylines[0].layer, "外枠");
+        assert_eq!(doc.polylines[0].color, 3);
+        assert_eq!(doc.polylines[0].vertices.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_lwpolyline_single_vertex() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n\
+0\nLWPOLYLINE\n90\n1\n70\n0\n\
+10\n42.0\n20\n99.0\n\
+0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.polylines[0].vertices.len(), 1);
+        assert!((doc.polylines[0].vertices[0].0 - 42.0).abs() < 0.001);
+        assert!((doc.polylines[0].vertices[0].1 - 99.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_lwpolyline_negative_coords() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n\
+0\nLWPOLYLINE\n90\n2\n70\n0\n\
+10\n-500.0\n20\n-1000.0\n\
+10\n500.0\n20\n1000.0\n\
+0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert!((doc.polylines[0].vertices[0].0 - (-500.0)).abs() < 0.001);
+        assert!((doc.polylines[0].vertices[1].1 - 1000.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_multiple_lwpolylines() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n\
+0\nLWPOLYLINE\n90\n2\n70\n0\n10\n0.0\n20\n0.0\n10\n10.0\n20\n10.0\n\
+0\nLWPOLYLINE\n90\n3\n70\n1\n10\n20.0\n20\n20.0\n10\n30.0\n20\n20.0\n10\n25.0\n20\n30.0\n\
+0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.polylines.len(), 2);
+        assert!(!doc.polylines[0].closed);
+        assert!(doc.polylines[1].closed);
+        assert_eq!(doc.polylines[0].vertices.len(), 2);
+        assert_eq!(doc.polylines[1].vertices.len(), 3);
+    }
+
+    // ================================================================
+    // Full writer→reader→verify roundtrips with mixed entities
+    // ================================================================
+
+    #[test]
+    fn test_roundtrip_verify_all_line_coords() {
+        let original = vec![
+            DxfLine::new(0.0, 0.0, 100.0, 200.0),
+            DxfLine::new(-50.0, -75.0, 999.9, 0.001),
+            DxfLine::new(1e6, -1e6, 0.0, 0.0),
+        ];
+        let writer = DxfWriter::new();
+        let dxf_text = writer.write(&original, &[]);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert_eq!(doc.lines.len(), original.len());
+        for (parsed, orig) in doc.lines.iter().zip(original.iter()) {
+            assert!((parsed.x1 - orig.x1).abs() < 0.01, "x1 mismatch");
+            assert!((parsed.y1 - orig.y1).abs() < 0.01, "y1 mismatch");
+            assert!((parsed.x2 - orig.x2).abs() < 0.01, "x2 mismatch");
+            assert!((parsed.y2 - orig.y2).abs() < 0.01, "y2 mismatch");
+            assert_eq!(parsed.color, orig.color);
+            assert_eq!(parsed.layer, orig.layer);
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_verify_all_text_fields() {
+        let original = vec![
+            DxfText::new(0.0, 0.0, "Origin"),
+            DxfText::new(100.0, 200.0, "No.1+5").height(250.0).rotation(-90.0).color(5).layer("測点"),
+            DxfText::new(-50.0, -50.0, "横断歩道").height(150.0).color(3),
+        ];
+        let writer = DxfWriter::new();
+        let dxf_text = writer.write(&[], &original);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert_eq!(doc.texts.len(), original.len());
+        for (parsed, orig) in doc.texts.iter().zip(original.iter()) {
+            assert!((parsed.x - orig.x).abs() < 0.01, "x mismatch for '{}'", orig.text);
+            assert!((parsed.y - orig.y).abs() < 0.01, "y mismatch for '{}'", orig.text);
+            assert_eq!(parsed.text, orig.text);
+            assert!((parsed.height - orig.height).abs() < 0.01, "height mismatch for '{}'", orig.text);
+            assert!((parsed.rotation - orig.rotation).abs() < 0.01, "rotation mismatch for '{}'", orig.text);
+            assert_eq!(parsed.color, orig.color, "color mismatch for '{}'", orig.text);
+            assert_eq!(parsed.layer, orig.layer, "layer mismatch for '{}'", orig.text);
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_verify_circles() {
+        let original = vec![
+            DxfCircle::new(0.0, 0.0, 1.0),
+            DxfCircle::new(500.0, -300.0, 99.9).color(3).layer("丸"),
+            DxfCircle::new(-1000.0, 2000.0, 0.5),
+        ];
+        let mut writer = DxfWriter::new();
+        let dxf_text = writer.write_all(&[], &[], &original, &[]);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert_eq!(doc.circles.len(), original.len());
+        for (parsed, orig) in doc.circles.iter().zip(original.iter()) {
+            assert!((parsed.x - orig.x).abs() < 0.01, "x mismatch");
+            assert!((parsed.y - orig.y).abs() < 0.01, "y mismatch");
+            assert!((parsed.radius - orig.radius).abs() < 0.01, "radius mismatch");
+            assert_eq!(parsed.color, orig.color);
+            assert_eq!(parsed.layer, orig.layer);
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_verify_lwpolylines() {
+        let original = vec![
+            DxfLwPolyline::new(vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)]),
+            DxfLwPolyline::closed(vec![(100.0, 100.0), (200.0, 100.0), (200.0, 200.0), (100.0, 200.0)])
+                .color(5).layer("外枠"),
+        ];
+        let mut writer = DxfWriter::new();
+        let dxf_text = writer.write_all(&[], &[], &[], &original);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert_eq!(doc.polylines.len(), original.len());
+        for (parsed, orig) in doc.polylines.iter().zip(original.iter()) {
+            assert_eq!(parsed.vertices.len(), orig.vertices.len(), "vertex count mismatch");
+            assert_eq!(parsed.closed, orig.closed, "closed mismatch");
+            assert_eq!(parsed.color, orig.color);
+            assert_eq!(parsed.layer, orig.layer);
+            for (pv, ov) in parsed.vertices.iter().zip(orig.vertices.iter()) {
+                assert!((pv.0 - ov.0).abs() < 0.01, "vertex x mismatch");
+                assert!((pv.1 - ov.1).abs() < 0.01, "vertex y mismatch");
+            }
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_mixed_all_types_verify_counts_and_lint() {
+        use crate::dxf::linter::DxfLinter;
+
+        let lines = vec![
+            DxfLine::with_style(0.0, 0.0, 1000.0, 0.0, 7, "中心線"),
+            DxfLine::with_style(0.0, -500.0, 0.0, 500.0, 3, "横断歩道"),
+        ];
+        let texts = vec![
+            DxfText::new(0.0, 50.0, "No.0").layer("測点").color(5).height(250.0).rotation(-90.0),
+            DxfText::new(1000.0, 50.0, "No.1").layer("測点").color(5),
+        ];
+        let circles = vec![
+            DxfCircle::new(500.0, 0.0, 25.0).layer("マーカー"),
+        ];
+        let polylines = vec![
+            DxfLwPolyline::closed(vec![
+                (0.0, -500.0), (1000.0, -500.0), (1000.0, 500.0), (0.0, 500.0),
+            ]).layer("外枠").color(1),
+        ];
+
+        let mut writer = DxfWriter::new();
+        let dxf_text = writer.write_all(&lines, &texts, &circles, &polylines);
+
+        // Lint validation
+        assert!(DxfLinter::is_valid(&dxf_text), "Writer output failed lint");
+
+        // Parse back
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert_eq!(doc.lines.len(), 2);
+        assert_eq!(doc.texts.len(), 2);
+        assert_eq!(doc.circles.len(), 1);
+        assert_eq!(doc.polylines.len(), 1);
+
+        // Verify specific values survived roundtrip
+        assert_eq!(doc.lines[0].layer, "中心線");
+        assert_eq!(doc.lines[1].color, 3);
+        assert_eq!(doc.texts[0].text, "No.0");
+        assert!((doc.texts[0].rotation - (-90.0)).abs() < 0.01);
+        assert!((doc.circles[0].radius - 25.0).abs() < 0.01);
+        assert!(doc.polylines[0].closed);
+        assert_eq!(doc.polylines[0].vertices.len(), 4);
+        assert_eq!(doc.polylines[0].layer, "外枠");
+    }
+
+    #[test]
+    fn test_roundtrip_double_parse_idempotent() {
+        // Write → parse → write again → parse again, verify identical
+        let lines = vec![DxfLine::with_style(10.0, 20.0, 30.0, 40.0, 5, "Layer1")];
+        let texts = vec![DxfText::new(50.0, 60.0, "Hello").height(10.0)];
+
+        let writer1 = DxfWriter::new();
+        let dxf1 = writer1.write(&lines, &texts);
+        let doc1 = parse_dxf(&dxf1).unwrap();
+
+        // Re-write from parsed entities
+        let writer2 = DxfWriter::new();
+        let dxf2 = writer2.write(&doc1.lines, &doc1.texts);
+        let doc2 = parse_dxf(&dxf2).unwrap();
+
+        assert_eq!(doc1.lines.len(), doc2.lines.len());
+        assert_eq!(doc1.texts.len(), doc2.texts.len());
+        assert!((doc2.lines[0].x1 - 10.0).abs() < 0.01);
+        assert_eq!(doc2.texts[0].text, "Hello");
+    }
 }
