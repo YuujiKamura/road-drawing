@@ -24,6 +24,13 @@
 
 pub mod dxf;
 
+// Re-export all public types at crate root.
+// These match the old `dxf` (rust-dxf) crate API 1:1.
+// Migration from trianglelist-web:
+//   Option A (zero code changes): In Cargo.toml use a rename:
+//     dxf = { package = "dxf-engine", path = "../dxf-engine" }
+//     Then `use dxf::{DxfLine, ...}` and `dxf::HorizontalAlignment::Left` still work.
+//   Option B: Replace `use dxf::` with `use dxf_engine::` in source files.
 pub use dxf::entities::{DxfCircle, DxfLine, DxfLwPolyline, DxfText, HorizontalAlignment, VerticalAlignment};
 pub use dxf::handle::{HandleGenerator, owners};
 pub use dxf::linter::{DxfLinter, LintResult, LintError, LintErrorCode};
