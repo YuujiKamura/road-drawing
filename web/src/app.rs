@@ -221,7 +221,8 @@ fn dxf_color_to_egui(color: i32) -> Color32 {
 
 /// Decode bytes to string: try UTF-8 first, fall back to Shift_JIS.
 /// Extracted for testability.
-pub fn decode_csv_bytes(bytes: &[u8]) -> String {
+#[cfg(test)]
+fn decode_csv_bytes(bytes: &[u8]) -> String {
     match std::str::from_utf8(bytes) {
         Ok(s) => s.to_string(),
         Err(_) => {

@@ -33,6 +33,7 @@ impl HandleGenerator {
     }
 
     /// Generates the next handle and increments the counter
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> String {
         let handle = self.next;
         self.next = self.next.saturating_add(1);

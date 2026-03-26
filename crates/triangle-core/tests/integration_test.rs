@@ -3,7 +3,7 @@
 //! Reads test fixtures from the original Kotlin trianglelist project:
 //!   ~/StudioProjects/trianglelist/app/src/test/resources/
 
-use triangle_core::connection::{build_connected_list, build_connected_list_lenient, verify_connection};
+use triangle_core::connection::{build_connected_list, verify_connection};
 use triangle_core::csv_loader::parse_csv;
 
 /// Path to Kotlin project test resources
@@ -304,7 +304,7 @@ fn test_integ_411_csv_standard_edge_length_consistency() {
     let ts = &parsed.triangles;
 
     // Check all standard type 1/2 connections (skip T22 which is extended type=4)
-    for (i, t) in ts.iter().enumerate() {
+    for t in ts.iter() {
         if t.parent_number == -1 || t.number == 22 { continue; }
         let parent = &ts[(t.parent_number - 1) as usize];
         let parent_edge = match t.connection_type {

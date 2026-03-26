@@ -24,7 +24,7 @@ fn round_n(val: f64, n: u32) -> f64 {
 /// 2. Convert to cumulative distances
 /// 3. Fill missing station names
 /// 4. Round numeric values
-pub fn transform_section(rows: &mut Vec<RawRow>) {
+pub fn transform_section(rows: &mut [RawRow]) {
     to_cumulative_rows(rows);
     fill_station_names(rows);
     for row in rows.iter_mut() {

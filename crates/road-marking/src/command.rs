@@ -243,8 +243,7 @@ fn parse_params(params_str: &str) -> HashMap<String, String> {
         let after_colon = after_key[colon_pos + 1..].trim_start();
 
         // Find value in quotes
-        if after_colon.starts_with('"') {
-            let val_content = &after_colon[1..];
+        if let Some(val_content) = after_colon.strip_prefix('"') {
             if let Some(val_end) = val_content.find('"') {
                 let value = val_content[..val_end].to_string();
                 map.insert(key, value);

@@ -139,7 +139,7 @@ fn cmd_generate_with_parser(
         "marking" => {
             let json = fs::read_to_string(input)
                 .map_err(|e| format!("Failed to read {}: {e}", input.display()))?;
-            return generate_marking_from_json(&json, output);
+            generate_marking_from_json(&json, output)
         }
         other => Err(format!("Unknown drawing type: {other}. Supported: road-section, marking")),
     }

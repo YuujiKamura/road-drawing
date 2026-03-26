@@ -106,7 +106,7 @@ pub fn dxf_color_to_egui(color: i32) -> Color32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use road_section::{LineSegment, DimensionText, RoadSectionGeometry, StationData, RoadSectionConfig};
+    use road_section::{LineSegment, RoadSectionGeometry, StationData, RoadSectionConfig};
 
     fn make_geometry(stations: &[StationData]) -> RoadSectionGeometry {
         let config = RoadSectionConfig::default();
