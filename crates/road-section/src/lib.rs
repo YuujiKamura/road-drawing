@@ -137,7 +137,8 @@ pub fn calculate_road_section(
     let scale = config.scale;
     let text_offset = config.text_offset;
 
-    let mut prev_points: Option<((f64, f64), (f64, f64), (f64, f64))> = None;
+    type Point = (f64, f64);
+    let mut prev_points: Option<(Point, Point, Point)> = None;
     let mut prev_x_unscaled: f64 = 0.0;
 
     for station in stations {

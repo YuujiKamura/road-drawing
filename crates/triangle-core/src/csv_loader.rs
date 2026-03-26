@@ -77,7 +77,7 @@ pub fn parse_csv(text: &str) -> Result<ParsedCsv, CsvError> {
     let mut data_start = 0;
 
     // Parse header lines (koujiname, rosenname, gyousyaname, zumennum)
-    let header_keys = ["koujiname", "rosenname", "gyousyaname", "zumennum"];
+    let _header_keys = ["koujiname", "rosenname", "gyousyaname", "zumennum"];
     for (i, line) in lines.iter().enumerate() {
         let parts: Vec<&str> = line.splitn(2, ',').collect();
         if parts.len() < 2 {

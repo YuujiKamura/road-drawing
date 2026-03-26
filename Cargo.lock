@@ -1165,6 +1165,7 @@ dependencies = [
  "encoding_rs",
  "regex",
  "road-section",
+ "rust_xlsxwriter",
 ]
 
 [[package]]
@@ -2588,6 +2589,7 @@ dependencies = [
  "excel-parser",
  "road-marking",
  "road-section",
+ "triangle-core",
 ]
 
 [[package]]
@@ -2624,6 +2626,15 @@ name = "road-section"
 version = "0.1.0"
 dependencies = [
  "dxf-engine",
+]
+
+[[package]]
+name = "rust_xlsxwriter"
+version = "0.79.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c743cb9f2a4524676020e26ee5f298445a82d882b09956811b1e78ca7e42b440"
+dependencies = [
+ "zip",
 ]
 
 [[package]]

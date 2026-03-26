@@ -83,7 +83,7 @@ pub fn extract_section_data_from_file(
     section_name: &str,
 ) -> Result<Vec<RawRow>, ParseError> {
     let text = read_file_text(path)
-        .map_err(|e| ParseError::InvalidFormat(e))?;
+        .map_err(ParseError::InvalidFormat)?;
     extract_section_data(&text, section_name)
 }
 

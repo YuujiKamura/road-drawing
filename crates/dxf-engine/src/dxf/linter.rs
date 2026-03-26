@@ -83,7 +83,7 @@ impl DxfLinter {
     /// Lint DXF content and return results
     pub fn lint(content: &str) -> LintResult {
         let mut errors = Vec::new();
-        let mut warnings = Vec::new();
+        let warnings = Vec::new();
         let mut stats = LintStats::default();
 
         let lines: Vec<&str> = content.lines().collect();
@@ -99,7 +99,7 @@ impl DxfLinter {
         }
 
         // Check for odd number of lines (broken chunks)
-        if lines.len() % 2 != 0 {
+        if !lines.len().is_multiple_of(2) {
             errors.push(LintError {
                 line: lines.len(),
                 code: LintErrorCode::BrokenChunk,
@@ -114,7 +114,6 @@ impl DxfLinter {
         let mut handles: HashSet<String> = HashSet::new();
         let mut section_stack: Vec<(usize, String)> = Vec::new();
         let mut found_eof = false;
-        let mut eof_line = 0;
 
         // Parse line pairs
         let mut i = 0;
@@ -171,7 +170,6 @@ impl DxfLinter {
                         }
                         "EOF" => {
                             found_eof = true;
-                            eof_line = line_num;
                         }
                         _ => {
                             // Count entities (LINE, TEXT, CIRCLE, etc.)

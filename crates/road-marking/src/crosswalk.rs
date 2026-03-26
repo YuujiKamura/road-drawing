@@ -866,7 +866,7 @@ mod tests {
 
         // Perpendicular to 60° road = 150° direction
         // On a steep road, stripes extend more in X than Y
-        let ref_pt = point_at_distance(
+        let _ref_pt = point_at_distance(
             &build_centerline_path(&centerlines), 5000.0,
         ).unwrap();
 
