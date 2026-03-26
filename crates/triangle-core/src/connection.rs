@@ -755,4 +755,96 @@ mod tests {
         // 0 - 1 = underflow → parent_idx huge → ParentNotFound
         assert!(result.is_err());
     }
+
+    // ================================================================
+    // build_connected_list_lenient tests
+    // ================================================================
+
+    #[test]
+    fn test_conn_lenient_single_independent() {
+        let rows = vec![(3.0, 4.0, 5.0, -1, -1)];
+        let result = build_connected_list_lenient(&rows);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_conn_lenient_skips_edge_mismatch() {
+        // child.a=3.0 but parent.b=4.0 — strict would fail, lenient should succeed
+        let rows = vec![
+            (6.0, 5.0, 4.0, -1, -1),  // triangle 1: a=6, b=5, c=4
+            (3.0, 4.0, 3.0, 1, 1),     // triangle 2: a=3 != parent.b=5, conn_type=1
+        ];
+        let strict = build_connected_list(&rows);
+        let lenient = build_connected_list_lenient(&rows);
+        assert!(strict.is_err(), "Strict should reject edge mismatch");
+        assert!(lenient.is_ok(), "Lenient should accept edge mismatch");
+        assert_eq!(lenient.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_conn_lenient_type2_skips_edge_mismatch() {
+        // conn_type=2 → child.a should match parent.c, but doesn't
+        let rows = vec![
+            (6.0, 5.0, 4.0, -1, -1),  // triangle 1: a=6, b=5, c=4
+            (99.0, 3.0, 3.0, 1, 2),    // triangle 2: a=99 != parent.c=4, conn_type=2
+        ];
+        let strict = build_connected_list(&rows);
+        let lenient = build_connected_list_lenient(&rows);
+        assert!(strict.is_err());
+        assert!(lenient.is_ok());
+    }
+
+    #[test]
+    fn test_conn_lenient_matching_edges_also_works() {
+        // When edges DO match, lenient should work identically to strict
+        let rows = vec![
+            (6.0, 5.0, 4.0, -1, -1),
+            (5.0, 4.0, 3.0, 1, 1),  // a=5 matches parent.b=5
+        ];
+        let strict = build_connected_list(&rows).unwrap();
+        let lenient = build_connected_list_lenient(&rows).unwrap();
+        assert_eq!(strict.len(), lenient.len());
+    }
+
+    #[test]
+    fn test_conn_lenient_still_rejects_invalid_parent() {
+        // Lenient skips edge checks but not parent existence
+        let rows = vec![
+            (3.0, 4.0, 5.0, -1, -1),
+            (3.0, 4.0, 5.0, 99, 1),  // parent 99 doesn't exist
+        ];
+        let result = build_connected_list_lenient(&rows);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_conn_lenient_still_rejects_invalid_conn_type() {
+        let rows = vec![
+            (3.0, 4.0, 5.0, -1, -1),
+            (3.0, 4.0, 5.0, 1, 0),  // conn_type=0 is invalid
+        ];
+        let result = build_connected_list_lenient(&rows);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_conn_lenient_chain_three_triangles() {
+        let rows = vec![
+            (6.0, 5.0, 4.0, -1, -1),
+            (3.0, 4.0, 3.0, 1, 1),   // mismatch a=3 vs parent.b=5
+            (2.0, 3.0, 2.0, 2, 2),   // mismatch a=2 vs parent.c=3
+        ];
+        let result = build_connected_list_lenient(&rows);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_conn_lenient_empty_input() {
+        let rows: Vec<(f64, f64, f64, i32, i32)> = vec![];
+        let result = build_connected_list_lenient(&rows);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
 }
