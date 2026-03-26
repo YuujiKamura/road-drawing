@@ -2,6 +2,8 @@
 members = [
     "crates/dxf-engine",
     "crates/road-section",
+    "crates/excel-parser",
+    "crates/triangle-core",
     "cli",
 ]
 resolver = "2"

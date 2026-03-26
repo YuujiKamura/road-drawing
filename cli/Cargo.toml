@@ -13,4 +13,5 @@ path = "src/main.rs"
 [dependencies]
 dxf-engine = { path = "../crates/dxf-engine" }
 road-section = { path = "../crates/road-section" }
+excel-parser = { path = "../crates/excel-parser" }
 clap = { version = "4", features = ["derive"] }

@@ -1,0 +1,20 @@
+[package]
+name = "excel-parser"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Excel/CSV parser for road section data with section detection and station name generation"
+
+[lib]
+name = "excel_parser"
+path = "src/lib.rs"
+
+[dependencies]
+road-section = { path = "../road-section" }
+calamine = "0.26"
+encoding_rs = "0.8"
+regex = "1"
+
+[dev-dependencies]
+approx = "0.5"
