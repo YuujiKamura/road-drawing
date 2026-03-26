@@ -366,6 +366,63 @@ mod tests {
     }
 
     #[test]
+    fn test_degenerate_collinear_a_plus_b_eq_c() {
+        // a + b == c exactly → collinear, zero area, invalid triangle
+        let t = Triangle {
+            lengths: [2.0, 3.0, 5.0],
+            points: [Point::new(0.0, 0.0); 3],
+            angle: 180.0,
+            parent_number: -1,
+            connection_type: -1,
+        };
+        assert!(!t.is_valid()); // 2+3 > 5 is false
+        assert!((t.area() - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_degenerate_collinear_b_plus_c_eq_a() {
+        // b + c == a exactly
+        let t = Triangle {
+            lengths: [9.0, 4.0, 5.0],
+            points: [Point::new(0.0, 0.0); 3],
+            angle: 180.0,
+            parent_number: -1,
+            connection_type: -1,
+        };
+        assert!(!t.is_valid()); // 4+5 > 9 is false
+        assert!((t.area() - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_degenerate_collinear_constructed() {
+        // Construct via with_angle: a+b==c → cosine rule yields degenerate vertex
+        let t = Triangle::with_angle(2.0, 3.0, 5.0, Point::new(0.0, 0.0), 0.0);
+        assert!(!t.is_valid());
+        // Heron: s=5, s-a=3, s-b=2, s-c=0 → area=0
+        assert!((t.area() - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_degenerate_near_zero_sides() {
+        // All sides = 0.001 → valid but near-zero area
+        let t = Triangle::new(0.001, 0.001, 0.001);
+        assert!(t.is_valid());
+        // area = sqrt(3)/4 * 0.001^2 ≈ 4.33e-7 → rounds to 0.00
+        assert!((t.area() - 0.0).abs() < 0.01);
+        // Angles should still be 60° (equilateral)
+        assert!((t.angle_a() - 60.0).abs() < 0.01);
+        assert!((t.angle_b() - 60.0).abs() < 0.01);
+        assert!((t.angle_c() - 60.0).abs() < 0.01);
+        // Vertex distances should match side lengths
+        let ca_ab = t.point_ca().distance_to(t.point_ab());
+        let ab_bc = t.point_ab().distance_to(t.point_bc());
+        let bc_ca = t.point_bc().distance_to(t.point_ca());
+        assert!((ca_ab - 0.001).abs() < 1e-6, "CA→AB: {}", ca_ab);
+        assert!((ab_bc - 0.001).abs() < 1e-6, "AB→BC: {}", ab_bc);
+        assert!((bc_ca - 0.001).abs() < 1e-6, "BC→CA: {}", bc_ca);
+    }
+
+    #[test]
     fn test_degenerate_zero_side_a() {
         let t = Triangle {
             lengths: [0.0, 3.0, 3.0],

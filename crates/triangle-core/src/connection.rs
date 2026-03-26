@@ -546,6 +546,34 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[test]
+    fn test_self_reference_second_triangle() {
+        // Triangle 2 (index 1) references itself as parent
+        // parent_num=2, i=1 → parent_idx=1, triangles.len()=1 → ParentNotFound
+        let rows = vec![
+            (6.0, 5.0, 4.0, -1, -1),  // 1: independent
+            (5.0, 4.0, 3.0,  2,  1),  // 2: parent=2 (self)
+        ];
+        let result = build_connected_list(&rows);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_connection_to_index_0_itself() {
+        // Triangle at index 0 tries to connect to itself (parent_num=1, which is index 0)
+        // At processing time, triangles vec is empty → parent_idx=0 >= len=0 → error
+        let rows = vec![
+            (5.0, 4.0, 3.0, 1, 1),  // index 0, parent_num=1 → parent_idx=0
+        ];
+        let result = build_connected_list(&rows);
+        assert!(result.is_err());
+        // Confirm it's ParentNotFound (not a panic from out-of-bounds)
+        match result.unwrap_err() {
+            ConnectionError::ParentNotFound { child: 1, parent: 1 } => {},
+            other => panic!("Expected ParentNotFound{{child:1, parent:1}}, got {:?}", other),
+        }
+    }
+
     // ================================================================
     // Forward reference (parent defined after child)
     // ================================================================
