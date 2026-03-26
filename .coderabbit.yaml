@@ -1,0 +1,21 @@
+language: "ja"
+
+reviews:
+  profile: "assertive"
+  high_level_summary: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/*.lock"
+    - "!target/**"
+  path_instructions:
+    - path: "crates/dxf-engine/**/*.rs"
+      instructions: "DXF仕様準拠を確認。ハンドル一意性、セクション構造、グループコード/値ペアの正当性"
+    - path: "crates/road-section/**/*.rs"
+      instructions: "路線展開図のジオメトリ計算精度。スケール変換、測点名生成、寸法テキスト配置の正確性"
+    - path: "cli/**/*.rs"
+      instructions: "CLIのエラーハンドリング。ファイルI/Oエラー、不正入力への対応"
+
+chat:
+  auto_reply: true
