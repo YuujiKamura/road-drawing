@@ -2,8 +2,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use dxf_engine::DxfWriter;
+use dxf_engine::{DxfLine, DxfWriter};
 use excel_parser::transform::{extract_and_transform, list_sections};
+use road_marking::command::{execute_command, parse_command, parse_command_list};
 use road_section::{
     calculate_road_section, geometry_to_dxf, parse_road_section_csv, RoadSectionConfig, StationData,
 };
@@ -87,7 +88,8 @@ fn main() {
 fn cmd_generate(input: &PathBuf, output: &PathBuf, drawing_type: &str, scale: f64) -> Result<(), String> {
     match drawing_type {
         "road-section" => generate_road_section(input, output, scale),
-        other => Err(format!("Unknown drawing type: {other}. Supported: road-section")),
+        "marking" => generate_marking(input, output),
+        other => Err(format!("Unknown drawing type: {other}. Supported: road-section, marking")),
     }
 }
 
@@ -133,7 +135,12 @@ fn cmd_generate_with_parser(
 
             Ok(())
         }
-        other => Err(format!("Unknown drawing type: {other}. Supported: road-section")),
+        "marking" => {
+            let json = fs::read_to_string(input)
+                .map_err(|e| format!("Failed to read {}: {e}", input.display()))?;
+            return generate_marking_from_json(&json, output);
+        }
+        other => Err(format!("Unknown drawing type: {other}. Supported: road-section, marking")),
     }
 }
 
@@ -161,6 +168,55 @@ fn generate_road_section(input: &PathBuf, output: &PathBuf, scale: f64) -> Resul
         "Generated {} lines, {} texts -> {}",
         lines.len(),
         texts.len(),
+        output.display()
+    );
+
+    Ok(())
+}
+
+/// Generate marking DXF from JSON command file.
+/// Input: JSON file with marking commands.
+/// Centerlines are not provided (empty) — use with DXF-based workflow.
+fn generate_marking(input: &PathBuf, output: &PathBuf) -> Result<(), String> {
+    let json = fs::read_to_string(input)
+        .map_err(|e| format!("Failed to read {}: {e}", input.display()))?;
+    generate_marking_from_json(&json, output)
+}
+
+fn generate_marking_from_json(json: &str, output: &PathBuf) -> Result<(), String> {
+    // Try command list format first, then single command
+    let commands = {
+        let list = parse_command_list(json);
+        if !list.is_empty() {
+            list
+        } else if let Some(cmd) = parse_command(json) {
+            vec![cmd]
+        } else {
+            return Err("Failed to parse marking command JSON".to_string());
+        }
+    };
+
+    let centerlines: Vec<DxfLine> = vec![];
+    let mut all_lines = Vec::new();
+    let mut all_texts = Vec::new();
+
+    for cmd in &commands {
+        let result = execute_command(cmd, &centerlines);
+        all_lines.extend(result.lines);
+        all_texts.extend(result.texts);
+        eprintln!("  {}: {}", cmd.command_type, result.message);
+    }
+
+    let mut writer = DxfWriter::new();
+    let dxf_content = writer.write_all(&all_lines, &all_texts, &[], &[]);
+
+    fs::write(output, &dxf_content)
+        .map_err(|e| format!("Failed to write {}: {e}", output.display()))?;
+
+    eprintln!(
+        "Generated {} lines, {} texts -> {}",
+        all_lines.len(),
+        all_texts.len(),
         output.display()
     );
 
