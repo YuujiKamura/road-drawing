@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use dxf_engine::{DxfLine, DxfWriter};
+use dxf_engine::{DxfLine, DxfText, DxfWriter};
 use excel_parser::transform::{extract_and_transform, list_sections};
 use road_marking::command::{execute_command, parse_command, parse_command_list};
 use road_section::{
@@ -89,7 +89,8 @@ fn cmd_generate(input: &PathBuf, output: &PathBuf, drawing_type: &str, scale: f6
     match drawing_type {
         "road-section" => generate_road_section(input, output, scale),
         "marking" => generate_marking(input, output),
-        other => Err(format!("Unknown drawing type: {other}. Supported: road-section, marking")),
+        "triangle" => generate_triangle(input, output),
+        other => Err(format!("Unknown drawing type: {other}. Supported: road-section, marking, triangle")),
     }
 }
 
@@ -217,6 +218,77 @@ fn generate_marking_from_json(json: &str, output: &PathBuf) -> Result<(), String
         "Generated {} lines, {} texts -> {}",
         all_lines.len(),
         all_texts.len(),
+        output.display()
+    );
+
+    Ok(())
+}
+
+/// Generate triangle list DXF from CSV.
+/// Reads triangle CSV (MIN/CONN/FULL format), builds connected list, renders to DXF.
+fn generate_triangle(input: &PathBuf, output: &PathBuf) -> Result<(), String> {
+    use triangle_core::csv_loader::parse_csv;
+    use triangle_core::connection::build_connected_list_lenient;
+
+    let content = fs::read_to_string(input)
+        .map_err(|e| format!("Failed to read {}: {e}", input.display()))?;
+
+    let parsed = parse_csv(&content).map_err(|e| e.to_string())?;
+
+    let rows: Vec<_> = parsed.triangles.iter().map(|t| {
+        (t.length_a, t.length_b, t.length_c, t.parent_number, t.connection_type)
+    }).collect();
+
+    let triangles = build_connected_list_lenient(&rows).map_err(|e| e.to_string())?;
+
+    // Render triangles to DXF lines + area texts
+    let mut lines = Vec::new();
+    let mut texts = Vec::new();
+
+    for (i, tri) in triangles.iter().enumerate() {
+        let ca = tri.point_ca();
+        let ab = tri.point_ab();
+        let bc = tri.point_bc();
+
+        // 3 edges
+        lines.push(DxfLine::new(ca.x, ca.y, ab.x, ab.y));
+        lines.push(DxfLine::new(ab.x, ab.y, bc.x, bc.y));
+        lines.push(DxfLine::new(bc.x, bc.y, ca.x, ca.y));
+
+        // Area text at centroid
+        let cx = (ca.x + ab.x + bc.x) / 3.0;
+        let cy = (ca.y + ab.y + bc.y) / 3.0;
+        let area = tri.area();
+        texts.push(DxfText::new(cx, cy, &format!("{}", area))
+            .height(0.3));
+
+        // Triangle number
+        texts.push(DxfText::new(cx, cy + 0.5, &format!("{}", i + 1))
+            .height(0.4)
+            .color(5));
+    }
+
+    // Header info
+    if !parsed.header.koujiname.is_empty() {
+        eprintln!("工事名: {}", parsed.header.koujiname);
+    }
+    if !parsed.header.rosenname.is_empty() {
+        eprintln!("路線名: {}", parsed.header.rosenname);
+    }
+
+    let mut writer = DxfWriter::new();
+    let dxf_content = writer.write_all(&lines, &texts, &[], &[]);
+
+    fs::write(output, &dxf_content)
+        .map_err(|e| format!("Failed to write {}: {e}", output.display()))?;
+
+    let total_area: f64 = triangles.iter().map(|t| t.area()).sum();
+    eprintln!(
+        "Generated {} triangles ({} lines, {} texts), total area: {:.2} -> {}",
+        triangles.len(),
+        lines.len(),
+        texts.len(),
+        total_area,
         output.display()
     );
 
