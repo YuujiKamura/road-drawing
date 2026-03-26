@@ -211,3 +211,142 @@ fn test_integ_connected_csv_vertex_precision() {
             "T{} BC→CA: {} vs {}", i + 1, bc_ca, t.lengths[2]);
     }
 }
+
+// ================================================================
+// 4.11.csv: 30 triangles, FULL format (28 columns), with trailing
+// metadata (ListAngle, ListScale, TextSize) and Deduction rows.
+// Triangle 22 has connection_type=4 in col5, which is a FULL format
+// extended connection type (uses ConnParam side/type/lcr from cols 17-19).
+// build_connected_list only handles type 1/2, so we test parsing
+// and validate standard connections separately.
+// ================================================================
+
+#[test]
+fn test_integ_411_csv_parse() {
+    let text = read_fixture("4.11.csv");
+    let parsed = parse_csv(&text).unwrap();
+
+    assert_eq!(parsed.header.rosenname, "新規路線");
+    assert_eq!(parsed.triangles.len(), 30, "Should parse exactly 30 triangles");
+}
+
+#[test]
+fn test_integ_411_csv_skips_metadata_rows() {
+    // ListAngle, ListScale, TextSize, Deduction lines must be skipped
+    let text = read_fixture("4.11.csv");
+    let parsed = parse_csv(&text).unwrap();
+
+    // Only triangle rows (number 1-30), no metadata/deduction
+    assert_eq!(parsed.triangles.len(), 30);
+    assert_eq!(parsed.triangles[0].number, 1);
+    assert_eq!(parsed.triangles[29].number, 30);
+}
+
+#[test]
+fn test_integ_411_csv_empty_header_fields() {
+    let text = read_fixture("4.11.csv");
+    let parsed = parse_csv(&text).unwrap();
+
+    // koujiname, gyousyaname, zumennum are empty in this file
+    assert_eq!(parsed.header.koujiname, "");
+    assert_eq!(parsed.header.gyousyaname, "");
+    assert_eq!(parsed.header.zumennum, "");
+    assert_eq!(parsed.header.rosenname, "新規路線");
+}
+
+#[test]
+fn test_integ_411_csv_triangle_1_independent() {
+    let text = read_fixture("4.11.csv");
+    let parsed = parse_csv(&text).unwrap();
+    let t1 = &parsed.triangles[0];
+
+    assert_eq!(t1.number, 1);
+    assert!((t1.length_a - 5.45).abs() < 0.001);
+    assert!((t1.length_b - 7.0).abs() < 0.001);
+    assert!((t1.length_c - 4.08).abs() < 0.001);
+    assert_eq!(t1.parent_number, -1);
+    assert_eq!(t1.connection_type, -1);
+}
+
+#[test]
+fn test_integ_411_csv_triangle_30_last() {
+    let text = read_fixture("4.11.csv");
+    let parsed = parse_csv(&text).unwrap();
+    let t30 = &parsed.triangles[29];
+
+    assert_eq!(t30.number, 30);
+    assert!((t30.length_a - 8.9).abs() < 0.001);
+    assert!((t30.length_b - 7.14).abs() < 0.001);
+    assert!((t30.length_c - 5.4).abs() < 0.001);
+    assert_eq!(t30.parent_number, 29);
+}
+
+#[test]
+fn test_integ_411_csv_connection_type4_in_col5() {
+    // Triangle 22 has connectionType=4 in FULL format col5.
+    // This is an extended type (ConnParam from cols 17-19).
+    // Parser normalizes non-standard types: 4 → 1 (B-edge fallback)
+    let text = read_fixture("4.11.csv");
+    let parsed = parse_csv(&text).unwrap();
+    let t22 = &parsed.triangles[21]; // 0-indexed
+
+    assert_eq!(t22.number, 22);
+    assert_eq!(t22.parent_number, 21);
+    // Type=4 is not standard 1/2; parser normalizes to 1
+    assert_eq!(t22.connection_type, 1);
+}
+
+#[test]
+fn test_integ_411_csv_standard_edge_length_consistency() {
+    // For standard connections (type 1/2), child.A should match parent edge
+    let text = read_fixture("4.11.csv");
+    let parsed = parse_csv(&text).unwrap();
+    let ts = &parsed.triangles;
+
+    // Check all standard type 1/2 connections (skip T22 which is extended type=4)
+    for (i, t) in ts.iter().enumerate() {
+        if t.parent_number == -1 || t.number == 22 { continue; }
+        let parent = &ts[(t.parent_number - 1) as usize];
+        let parent_edge = match t.connection_type {
+            1 => parent.length_b,
+            2 => parent.length_c,
+            _ => continue,
+        };
+        assert!((t.length_a - parent_edge).abs() < 0.01,
+            "T{}: A={} should match parent T{} edge (type={}) = {}",
+            t.number, t.length_a, t.parent_number, t.connection_type, parent_edge);
+    }
+}
+
+#[test]
+fn test_integ_411_csv_all_triangles_valid() {
+    // All 30 parsed triangles should satisfy triangle inequality
+    let text = read_fixture("4.11.csv");
+    let parsed = parse_csv(&text).unwrap();
+
+    use triangle_core::triangle::Triangle;
+
+    for row in &parsed.triangles {
+        let t = Triangle::new(row.length_a, row.length_b, row.length_c);
+        assert!(t.is_valid(),
+            "T{} ({}, {}, {}) should be valid",
+            row.number, row.length_a, row.length_b, row.length_c);
+        assert!(t.area() > 0.0,
+            "T{} area should be > 0, got {}", row.number, t.area());
+    }
+}
+
+#[test]
+fn test_integ_411_csv_total_area() {
+    let text = read_fixture("4.11.csv");
+    let parsed = parse_csv(&text).unwrap();
+
+    use triangle_core::triangle::Triangle;
+
+    let total: f64 = parsed.triangles.iter().map(|row| {
+        Triangle::new(row.length_a, row.length_b, row.length_c).area()
+    }).sum();
+
+    // 30 triangles, total area should be substantial
+    assert!(total > 50.0, "Total area of 30 triangles should be > 50, got {}", total);
+}

@@ -118,12 +118,30 @@ pub fn parse_csv(text: &str) -> Result<ParsedCsv, CsvError> {
         let col_count = parts.len();
 
         if col_count < 4 {
-            return Err(CsvError::TooFewColumns { row: row_num, got: col_count, need: 4 });
+            // Before any triangle parsed → error (bad data row)
+            // After triangles parsed → skip (metadata like ListAngle, ListScale)
+            if triangles.is_empty() {
+                return Err(CsvError::TooFewColumns { row: row_num, got: col_count, need: 4 });
+            }
+            continue;
         }
 
-        let number: i32 = parts[0].parse().map_err(|_| CsvError::InvalidNumber {
-            row: row_num, col: "number", value: parts[0].to_string(),
-        })?;
+        // Parse triangle number. Non-numeric first column:
+        // - Before any triangle parsed → error (bad data)
+        // - After triangles parsed → skip (metadata like ListAngle, Deduction)
+        let number: i32 = match parts[0].parse() {
+            Ok(n) => n,
+            Err(_) => {
+                if triangles.is_empty() {
+                    return Err(CsvError::InvalidNumber {
+                        row: row_num,
+                        col: "number",
+                        value: parts[0].to_string(),
+                    });
+                }
+                continue;
+            }
+        };
         let length_a: f64 = parse_finite_f64(parts[1]).map_err(|_| CsvError::InvalidNumber {
             row: row_num, col: "length_a", value: parts[1].to_string(),
         })?;
@@ -138,9 +156,29 @@ pub fn parse_csv(text: &str) -> Result<ParsedCsv, CsvError> {
             let pn: i32 = parts[4].parse().map_err(|_| CsvError::InvalidNumber {
                 row: row_num, col: "parent_number", value: parts[4].to_string(),
             })?;
-            let ct: i32 = parts[5].parse().map_err(|_| CsvError::InvalidNumber {
+            let col_type: i32 = parts[5].parse().map_err(|_| CsvError::InvalidNumber {
                 row: row_num, col: "connection_type", value: parts[5].to_string(),
             })?;
+
+            // FULL format (28+ columns) has connectionType in col5 and
+            // connectionSide in col6. Normalize to 1 (B-edge) / 2 (C-edge)
+            // following Kotlin CsvToDxfMain logic:
+            //   if parent == -1 → -1
+            //   else if colSide == 2 || colType == 2 → 2 (C-edge)
+            //   else → 1 (B-edge)
+            let ct = if pn == -1 {
+                -1
+            } else if col_count >= 7 {
+                let col_side: i32 = parts[6].parse().unwrap_or(0);
+                if col_side == 2 || col_type == 2 { 2 } else { 1 }
+            } else if col_type == 1 || col_type == 2 {
+                col_type
+            } else if col_type == -1 {
+                -1
+            } else {
+                // Legacy FULL format: non-standard values → B-edge
+                1
+            };
             (pn, ct)
         } else {
             (-1, -1)
@@ -513,6 +551,7 @@ zumennum, 1
 
     #[test]
     fn test_parse_invalid_triangle_number() {
+        // Non-integer first column before any triangle is parsed → error
         let csv = "\
 koujiname, test
 rosenname, test
