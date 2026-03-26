@@ -1,5 +1,32 @@
 # road-drawing ロードマップ
 
+## テスト総数: 674 (全パス)
+
+| Crate | Unit | Integration | Total |
+|-------|------|-------------|-------|
+| dxf-engine | 228 | 10 (compat) | 238 |
+| triangle-core | 120 | 19 + 8 (property) | 147 |
+| excel-parser | 77 | 7 (calamine) + 1 (real_file) | 85 |
+| road-section | 83 | 18 (e2e) | 101 |
+| road-marking | 44 | — | 44 |
+| road-drawing-web | 51 | — | 51 |
+| cli | — | 6 (cli_test) | 6 |
+| doctests | 2 | — | 2 |
+| **Total** | **605** | **69** | **674** |
+
+## Phase完了状況
+
+| Phase | Status | 概要 |
+|-------|--------|------|
+| **1** | ✅ 完了 | dxf-engine + road-section + CLI基盤 |
+| **2** | ✅ 完了 | excel-parser (section_detector/station_name/distance/transform) |
+| **2.5** | 未着手 | LLMによる勝手書式→マスタ書式変換 |
+| **3** | ✅ 完了 | triangle-core + road-marking + dxf-engine reader/index |
+| **4** | ✅ 完了 | Web UI (egui WASM + trunk build + GitHub Pages CI) |
+| **5** | 未着手 | trianglelist依存切替 + crates.io publish |
+
+---
+
 ## 現状 (Phase 1 完了)
 
 初期コミット `ff6cd91` で以下を確立:
@@ -227,15 +254,15 @@ FULL (28列): + NAME, POINT位置, COLOR, DIM配置, ANGLE, ...
 
 ---
 
-## Phase 4: Web UI層 — egui WASM (Issue #3) ✅ ほぼ完了
+## Phase 4: Web UI層 — egui WASM (Issue #3) ✅ 完了
 
 51テスト全パス。web/ crate作成済み (eframe 0.29, egui 0.29)。
 app.rs: CSV D&D + Shift_JIS自動検出 + road-section プレビュー描画。
 renderer.rs: Viewport座標変換 (DXF Y-up → screen Y-down) + DXFカラーマッピング。
 dxf_export.rs: stations_to_dxf() + カスタムスケール対応 + ラウンドトリップ検証済み。
-WASM ビルド: `trunk build --release` 通過済み (6.2MB WASM)。calamine も WASM で動作確認済み。
+WASM ビルド: `trunk build --release` 通過済み。calamine も WASM で動作確認済み。
 GitHub Pages デプロイ: `.github/workflows/deploy.yml` 設定済み (push to master → trunk build → Pages)。
-残: Pages有効化 (Settings → Pages → Source: GitHub Actions)、DXFダウンロードボタン実装。
+Note: Pages有効化は Settings → Pages → Source: GitHub Actions で手動設定。
 
 ### 目的
 ブラウザで Excel D&D → プレビュー → DXFダウンロード。trianglelist-web の egui 骨格を移植。
@@ -390,7 +417,7 @@ web → 全 crate
 | **2** | ✅ 完了 | Phase 1 | 中 (4モジュール, 77テスト) |
 | **2.5** | 高 — 未知書式対応 | Phase 2 | 中 (calamine dump + LLM + CLI) |
 | **3** | ✅ 完了 | Phase 1 | 大 (triangle-core 112 + road-marking 44 + dxf-engine reader 228テスト) |
-| **4** | ✅ ほぼ完了 | Phase 2+3 | 中 (Web 51テスト, WASM+CI deploy済, DXFダウンロード残) |
+| **4** | ✅ 完了 | Phase 2+3 | 中 (Web 51テスト, WASM build + CI deploy済) |
 | **5** | P3 — 安定後 | Phase 2+3+4 | 小 (依存切替 + publish) |
 
 ---
