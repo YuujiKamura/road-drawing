@@ -12,10 +12,25 @@ use crate::triangle::Triangle;
 
 const EPSILON: f64 = 0.01;
 
-/// Build a connected triangle list from parsed CSV rows
-/// Returns triangles with computed vertices based on parent-child connections
+/// Build a connected triangle list from parsed CSV rows (strict edge validation).
+/// Returns error if child's A-edge doesn't match parent's connection edge.
 pub fn build_connected_list(
-    rows: &[(f64, f64, f64, i32, i32)], // (a, b, c, parent_number, connection_type)
+    rows: &[(f64, f64, f64, i32, i32)],
+) -> Result<Vec<Triangle>, ConnectionError> {
+    build_connected_list_inner(rows, true)
+}
+
+/// Build a connected triangle list, skipping edge length mismatch validation.
+/// Used for FULL format CSVs where edge lengths may not match exactly.
+pub fn build_connected_list_lenient(
+    rows: &[(f64, f64, f64, i32, i32)],
+) -> Result<Vec<Triangle>, ConnectionError> {
+    build_connected_list_inner(rows, false)
+}
+
+fn build_connected_list_inner(
+    rows: &[(f64, f64, f64, i32, i32)],
+    strict_edge_check: bool,
 ) -> Result<Vec<Triangle>, ConnectionError> {
     let mut triangles: Vec<Triangle> = Vec::with_capacity(rows.len());
 
@@ -49,7 +64,7 @@ pub fn build_connected_list(
                 }),
             };
 
-            if (a - parent_edge).abs() > EPSILON {
+            if strict_edge_check && (a - parent_edge).abs() > EPSILON {
                 return Err(ConnectionError::EdgeLengthMismatch {
                     child: child_num,
                     child_a: a,
