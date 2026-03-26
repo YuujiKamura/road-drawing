@@ -10,6 +10,18 @@ use std::fmt::Write;
 use crate::dxf::entities::{DxfCircle, DxfLine, DxfLwPolyline, DxfText};
 use crate::dxf::handle::{HandleGenerator, owners};
 
+/// Format f64 for DXF output, ensuring a decimal point is always present.
+/// This prevents integer-like values (e.g. 5.0 → "5") from being
+/// confused with DXF group codes during parsing.
+fn fmt_f64(v: f64) -> String {
+    let s = v.to_string();
+    if s.contains('.') || s.contains('e') || s.contains('E') {
+        s
+    } else {
+        format!("{s}.0")
+    }
+}
+
 /// DXF file writer
 ///
 /// Generates DXF format text from line, text, circle, and polyline entities.
@@ -132,12 +144,12 @@ impl DxfWriter {
         let handle = handle_gen.next();
         Self::write_entity_header(output, "LINE", &line.layer, line.color, &handle);
         writeln!(output, "100\nAcDbLine").unwrap();
-        writeln!(output, "10\n{}", line.x1).unwrap();
-        writeln!(output, "20\n{}", line.y1).unwrap();
-        writeln!(output, "30\n0").unwrap();
-        writeln!(output, "11\n{}", line.x2).unwrap();
-        writeln!(output, "21\n{}", line.y2).unwrap();
-        writeln!(output, "31\n0").unwrap();
+        writeln!(output, "10\n{}", fmt_f64(line.x1)).unwrap();
+        writeln!(output, "20\n{}", fmt_f64(line.y1)).unwrap();
+        writeln!(output, "30\n0.0").unwrap();
+        writeln!(output, "11\n{}", fmt_f64(line.x2)).unwrap();
+        writeln!(output, "21\n{}", fmt_f64(line.y2)).unwrap();
+        writeln!(output, "31\n0.0").unwrap();
     }
 
     /// Writes a TEXT entity with handle
@@ -147,21 +159,21 @@ impl DxfWriter {
         let handle = handle_gen.next();
         Self::write_entity_header(output, "TEXT", &text.layer, text.color, &handle);
         writeln!(output, "100\nAcDbText").unwrap();
-        writeln!(output, "10\n{}", text.x).unwrap();
-        writeln!(output, "20\n{}", text.y).unwrap();
-        writeln!(output, "30\n0").unwrap();
-        writeln!(output, "40\n{}", text.height).unwrap();
+        writeln!(output, "10\n{}", fmt_f64(text.x)).unwrap();
+        writeln!(output, "20\n{}", fmt_f64(text.y)).unwrap();
+        writeln!(output, "30\n0.0").unwrap();
+        writeln!(output, "40\n{}", fmt_f64(text.height)).unwrap();
         writeln!(output, "1\n{}", text.text).unwrap();
-        writeln!(output, "50\n{}", text.rotation).unwrap();
+        writeln!(output, "50\n{}", fmt_f64(text.rotation)).unwrap();
 
         // For non-default alignment, specify second alignment point (group 11/21)
         let needs_second_point = text.align_h != HorizontalAlignment::Left
             || text.align_v != VerticalAlignment::Baseline;
 
         if needs_second_point {
-            writeln!(output, "11\n{}", text.x).unwrap();
-            writeln!(output, "21\n{}", text.y).unwrap();
-            writeln!(output, "31\n0").unwrap();
+            writeln!(output, "11\n{}", fmt_f64(text.x)).unwrap();
+            writeln!(output, "21\n{}", fmt_f64(text.y)).unwrap();
+            writeln!(output, "31\n0.0").unwrap();
         }
 
         writeln!(output, "72\n{}", text.align_h as i32).unwrap();
@@ -174,10 +186,10 @@ impl DxfWriter {
         let handle = handle_gen.next();
         Self::write_entity_header(output, "CIRCLE", &circle.layer, circle.color, &handle);
         writeln!(output, "100\nAcDbCircle").unwrap();
-        writeln!(output, "10\n{}", circle.x).unwrap();
-        writeln!(output, "20\n{}", circle.y).unwrap();
-        writeln!(output, "30\n0").unwrap();
-        writeln!(output, "40\n{}", circle.radius).unwrap();
+        writeln!(output, "10\n{}", fmt_f64(circle.x)).unwrap();
+        writeln!(output, "20\n{}", fmt_f64(circle.y)).unwrap();
+        writeln!(output, "30\n0.0").unwrap();
+        writeln!(output, "40\n{}", fmt_f64(circle.radius)).unwrap();
     }
 
     /// Writes a LWPOLYLINE entity with handle
@@ -191,11 +203,11 @@ impl DxfWriter {
         writeln!(output, "100\nAcDbPolyline").unwrap();
         writeln!(output, "90\n{}", polyline.vertices.len()).unwrap();
         writeln!(output, "70\n{}", if polyline.closed { 1 } else { 0 }).unwrap();
-        writeln!(output, "43\n0").unwrap(); // Constant width
+        writeln!(output, "43\n0.0").unwrap(); // Constant width
 
         for (x, y) in &polyline.vertices {
-            writeln!(output, "10\n{}", x).unwrap();
-            writeln!(output, "20\n{}", y).unwrap();
+            writeln!(output, "10\n{}", fmt_f64(*x)).unwrap();
+            writeln!(output, "20\n{}", fmt_f64(*y)).unwrap();
         }
     }
 
