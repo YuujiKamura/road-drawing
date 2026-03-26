@@ -228,6 +228,7 @@ impl Default for DxfWriter {
 mod tests {
     use super::*;
     use crate::dxf::entities::{HorizontalAlignment, VerticalAlignment};
+    use crate::dxf::linter::DxfLinter;
 
     #[test]
     fn test_write_empty() {
@@ -242,6 +243,7 @@ mod tests {
         assert!(output.contains("ENTITIES"));
         assert!(output.contains("ENDSEC"));
         assert!(output.contains("EOF"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -255,6 +257,7 @@ mod tests {
         assert!(output.contains("330\n1F")); // Owner
         assert!(output.contains("100\nAcDbEntity"));
         assert!(output.contains("100\nAcDbLine"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -266,6 +269,7 @@ mod tests {
         assert!(output.contains("LINE"));
         assert!(output.contains("8\nTestLayer"));
         assert!(output.contains("62\n5"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -278,6 +282,7 @@ mod tests {
         assert!(output.contains("5\n100")); // Handle
         assert!(output.contains("100\nAcDbText"));
         assert!(output.contains("1\nHello World"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -299,6 +304,7 @@ mod tests {
         assert!(output.contains("50\n45"));
         assert!(output.contains("72\n1"));
         assert!(output.contains("73\n2"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -312,6 +318,7 @@ mod tests {
         let text_section_start = output.find("1\nDefault").unwrap();
         let after_text = &output[text_section_start..];
         assert!(!after_text.contains("11\n30"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -324,6 +331,7 @@ mod tests {
 
         assert!(output.contains("11\n50"));
         assert!(output.contains("21\n60"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -344,6 +352,7 @@ mod tests {
 
         let text_count = output.matches("0\nTEXT\n").count();
         assert_eq!(text_count, 2);
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -354,6 +363,7 @@ mod tests {
         assert!(output.starts_with("0\nSECTION\n2\nHEADER\n"));
         assert!(output.contains("9\n$ACADVER\n1\nAC1015\n"));
         assert!(output.contains("9\n$INSUNITS\n70\n4\n"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -361,6 +371,7 @@ mod tests {
         let writer = DxfWriter::default();
         let output = writer.write(&[], &[]);
         assert!(output.contains("EOF"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -373,6 +384,7 @@ mod tests {
         assert!(output.contains("5\n100")); // Handle
         assert!(output.contains("100\nAcDbCircle"));
         assert!(output.contains("40\n10")); // Radius
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -386,6 +398,7 @@ mod tests {
         assert!(output.contains("CIRCLE"));
         assert!(output.contains("8\nCircleLayer"));
         assert!(output.contains("62\n3"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -402,6 +415,7 @@ mod tests {
         assert!(output.contains("100\nAcDbPolyline"));
         assert!(output.contains("90\n3")); // 3 vertices
         assert!(output.contains("70\n0")); // Open
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -418,6 +432,7 @@ mod tests {
         assert!(output.contains("LWPOLYLINE"));
         assert!(output.contains("90\n4")); // 4 vertices
         assert!(output.contains("70\n1")); // Closed
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -430,6 +445,7 @@ mod tests {
 
         assert!(output.contains("8\nOutlineLayer"));
         assert!(output.contains("62\n5"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -439,6 +455,7 @@ mod tests {
         let output = writer.write_all(&[], &[], &[], &polylines);
 
         assert!(!output.contains("LWPOLYLINE"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -459,6 +476,7 @@ mod tests {
         assert_eq!(output.matches("0\nTEXT\n").count(), 1);
         assert_eq!(output.matches("0\nCIRCLE\n").count(), 1);
         assert_eq!(output.matches("0\nLWPOLYLINE\n").count(), 1);
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -475,6 +493,7 @@ mod tests {
         assert!(output.contains("5\n100"));
         assert!(output.contains("5\n101"));
         assert!(output.contains("5\n102"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -490,6 +509,7 @@ mod tests {
         // All entities should have owner reference (330)
         let owner_count = output.matches("330\n1F").count();
         assert_eq!(owner_count, 4);
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -523,6 +543,7 @@ mod tests {
         assert!(output.contains("EOF"));
         assert!(!output.contains("LINE"));
         assert!(!output.contains("TEXT"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -534,6 +555,7 @@ mod tests {
         assert!(output.contains("20\n-200"));
         assert!(output.contains("11\n-300"));
         assert!(output.contains("21\n-400"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -542,6 +564,7 @@ mod tests {
         let lines = vec![DxfLine::new(0.0, 0.0, 0.0, 0.0)];
         let output = writer.write(&lines, &[]);
         assert!(output.contains("LINE"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -551,6 +574,7 @@ mod tests {
         let output = writer.write(&[], &texts);
         assert!(output.contains("TEXT"));
         assert!(output.contains("1\n"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -559,6 +583,7 @@ mod tests {
         let texts = vec![DxfText::new(0.0, 0.0, "横断歩道")];
         let output = writer.write(&[], &texts);
         assert!(output.contains("1\n横断歩道"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -567,6 +592,7 @@ mod tests {
         let texts = vec![DxfText::new(0.0, 0.0, "R").rotation(-90.0)];
         let output = writer.write(&[], &texts);
         assert!(output.contains("50\n-90"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -579,10 +605,10 @@ mod tests {
         ];
         let output = writer.write(&[], &texts);
         assert_eq!(output.matches("0\nTEXT\n").count(), 3);
-        // Non-default alignments should have second point (11/21)
         assert!(output.contains("72\n0")); // Left
         assert!(output.contains("72\n1")); // Center
         assert!(output.contains("72\n2")); // Right
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -592,6 +618,7 @@ mod tests {
         let output = writer.write_all(&[], &[], &circles, &[]);
         assert!(output.contains("CIRCLE"));
         assert!(output.contains("40\n0"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -601,6 +628,7 @@ mod tests {
         let output = writer.write_all(&[], &[], &[], &polylines);
         assert!(output.contains("LWPOLYLINE"));
         assert!(output.contains("90\n1"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -610,6 +638,7 @@ mod tests {
         let polylines = vec![DxfLwPolyline::new(verts)];
         let output = writer.write_all(&[], &[], &[], &polylines);
         assert!(output.contains("90\n100"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -633,12 +662,11 @@ mod tests {
         }
         let unique: std::collections::HashSet<&&str> = handles.iter().collect();
         assert_eq!(unique.len(), 50);
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
     fn test_write_output_lint_valid() {
-        use crate::dxf::linter::DxfLinter;
-
         let mut writer = DxfWriter::new();
         let lines = vec![DxfLine::new(0.0, 0.0, 10.0, 10.0)];
         let texts = vec![DxfText::new(5.0, 5.0, "Test")];
@@ -650,8 +678,6 @@ mod tests {
 
     #[test]
     fn test_write_legacy_api_lint_valid() {
-        use crate::dxf::linter::DxfLinter;
-
         let writer = DxfWriter::new();
         let lines = vec![
             DxfLine::with_style(0.0, 0.0, 100.0, 0.0, 5, "中心線"),
@@ -672,6 +698,7 @@ mod tests {
         let header_pos = output.find("2\nHEADER").unwrap();
         let entities_pos = output.find("2\nENTITIES").unwrap();
         assert!(header_pos < entities_pos);
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -680,6 +707,7 @@ mod tests {
         let output = writer.write(&[], &[]);
         let trimmed = output.trim_end();
         assert!(trimmed.ends_with("EOF"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -689,6 +717,7 @@ mod tests {
         let output = writer.write(&lines, &[]);
         assert!(output.contains("30\n0"));
         assert!(output.contains("31\n0"));
+        assert!(DxfLinter::is_valid(&output));
     }
 
     #[test]
@@ -697,5 +726,6 @@ mod tests {
         let polylines = vec![DxfLwPolyline::new(vec![(0.0, 0.0), (10.0, 10.0)])];
         let output = writer.write_all(&[], &[], &[], &polylines);
         assert!(output.contains("43\n0")); // Constant width = 0
+        assert!(DxfLinter::is_valid(&output));
     }
 }
