@@ -357,6 +357,181 @@ mod tests {
     }
 
     // ================================================================
+    // 5+ triangle chain: cumulative floating-point error < 0.01
+    // ================================================================
+
+    /// Helper: check that a triangle's vertex distances match its side lengths within tolerance
+    fn assert_side_lengths_match(t: &Triangle, label: &str, tol: f64) {
+        let [a, b, c] = t.lengths;
+        let ca_ab = t.point_ca().distance_to(t.point_ab());
+        let ab_bc = t.point_ab().distance_to(t.point_bc());
+        let bc_ca = t.point_bc().distance_to(t.point_ca());
+        assert!((ca_ab - a).abs() < tol, "{} CA→AB: {} vs {}, err={}", label, ca_ab, a, (ca_ab - a).abs());
+        assert!((ab_bc - b).abs() < tol, "{} AB→BC: {} vs {}, err={}", label, ab_bc, b, (ab_bc - b).abs());
+        assert!((bc_ca - c).abs() < tol, "{} BC→CA: {} vs {}, err={}", label, bc_ca, c, (bc_ca - c).abs());
+    }
+
+    #[test]
+    fn test_chain_5_triangles_type1_cumulative_error() {
+        // Linear chain of 5 triangles via B-edge (type1)
+        // Each child's A == parent's B
+        let rows = vec![
+            (10.0, 8.0, 7.0, -1, -1), // 1: root
+            ( 8.0, 6.0, 5.0,  1,  1), // 2: A=8 == parent1.B=8
+            ( 6.0, 5.0, 4.0,  2,  1), // 3: A=6 == parent2.B=6
+            ( 5.0, 4.0, 3.5,  3,  1), // 4: A=5 == parent3.B=5
+            ( 4.0, 3.0, 2.5,  4,  1), // 5: A=4 == parent4.B=4
+        ];
+        let list = build_connected_list(&rows).unwrap();
+        assert_eq!(list.len(), 5);
+
+        // Verify all connections
+        for i in 0..4 {
+            assert!(verify_connection(&list[i], &list[i + 1], 1),
+                "Connection {}->{} failed", i + 1, i + 2);
+        }
+
+        // Verify cumulative error on deepest triangle stays < 0.01
+        assert_side_lengths_match(&list[4], "chain5[4]", EPSILON);
+    }
+
+    #[test]
+    fn test_chain_5_triangles_type2_cumulative_error() {
+        // Linear chain of 5 triangles via C-edge (type2)
+        // Each child's A == parent's C
+        let rows = vec![
+            (10.0, 8.0, 7.0, -1, -1), // 1: root
+            ( 7.0, 6.0, 5.0,  1,  2), // 2: A=7 == parent1.C=7
+            ( 5.0, 4.5, 4.0,  2,  2), // 3: A=5 == parent2.C=5
+            ( 4.0, 3.5, 3.0,  3,  2), // 4: A=4 == parent3.C=4
+            ( 3.0, 2.5, 2.0,  4,  2), // 5: A=3 == parent4.C=3
+        ];
+        let list = build_connected_list(&rows).unwrap();
+        assert_eq!(list.len(), 5);
+
+        for i in 0..4 {
+            assert!(verify_connection(&list[i], &list[i + 1], 2),
+                "Connection {}->{} failed", i + 1, i + 2);
+        }
+
+        assert_side_lengths_match(&list[4], "chain5_type2[4]", EPSILON);
+    }
+
+    #[test]
+    fn test_chain_5_triangles_alternating_types_cumulative_error() {
+        // Chain alternating B→C→B→C connections
+        let rows = vec![
+            (10.0, 8.0, 7.0, -1, -1), // 1
+            ( 8.0, 6.0, 5.0,  1,  1), // 2: A=8 == parent1.B=8 (type1)
+            ( 5.0, 4.0, 3.5,  2,  2), // 3: A=5 == parent2.C=5 (type2)
+            ( 4.0, 3.5, 3.0,  3,  1), // 4: A=4 == parent3.B=4 (type1)  (fixed: parent3.B=4)
+            ( 3.0, 2.5, 2.0,  4,  2), // 5: A=3 == parent4.C=3 (type2)  (fixed: parent4.C=3)
+        ];
+        let list = build_connected_list(&rows).unwrap();
+        assert_eq!(list.len(), 5);
+
+        let expected_types = [1, 2, 1, 2];
+        for i in 0..4 {
+            assert!(verify_connection(&list[i], &list[i + 1], expected_types[i]),
+                "Connection {}->{} type{} failed", i + 1, i + 2, expected_types[i]);
+        }
+
+        // Cumulative error check on every triangle in the chain
+        for (idx, t) in list.iter().enumerate() {
+            assert_side_lengths_match(t, &format!("alt_chain[{}]", idx), EPSILON);
+        }
+    }
+
+    #[test]
+    fn test_chain_7_triangles_deep_cumulative_error() {
+        // 7-deep linear chain via B-edges: realistic road survey scenario
+        let rows = vec![
+            (12.0, 10.0, 9.0, -1, -1), // 1
+            (10.0,  8.0, 7.0,  1,  1),  // 2
+            ( 8.0,  7.0, 6.0,  2,  1),  // 3
+            ( 7.0,  6.0, 5.0,  3,  1),  // 4
+            ( 6.0,  5.0, 4.5,  4,  1),  // 5
+            ( 5.0,  4.5, 4.0,  5,  1),  // 6
+            ( 4.5,  4.0, 3.5,  6,  1),  // 7
+        ];
+        let list = build_connected_list(&rows).unwrap();
+        assert_eq!(list.len(), 7);
+
+        // Verify all connections
+        for i in 0..6 {
+            assert!(verify_connection(&list[i], &list[i + 1], 1),
+                "Connection {}->{} failed", i + 1, i + 2);
+        }
+
+        // Cumulative error on deepest (7th) triangle must stay < 0.01
+        assert_side_lengths_match(&list[6], "deep7[6]", EPSILON);
+
+        // Also verify every intermediate triangle
+        for (idx, t) in list.iter().enumerate() {
+            assert_side_lengths_match(t, &format!("deep7[{}]", idx), EPSILON);
+        }
+    }
+
+    #[test]
+    fn test_chain_5_tree_branching_cumulative_error() {
+        // Tree structure: root with 2 children, each with 1 grandchild = 5 triangles
+        //       1
+        //      / \
+        //     2   3
+        //     |   |
+        //     4   5
+        let rows = vec![
+            (10.0, 8.0, 7.0, -1, -1), // 1: root
+            ( 8.0, 6.0, 5.0,  1,  1), // 2: parent 1's B=8
+            ( 7.0, 5.5, 4.5,  1,  2), // 3: parent 1's C=7
+            ( 6.0, 4.5, 4.0,  2,  1), // 4: parent 2's B=6
+            ( 5.5, 4.0, 3.5,  3,  1), // 5: parent 3's B=5.5
+        ];
+        let list = build_connected_list(&rows).unwrap();
+        assert_eq!(list.len(), 5);
+
+        assert!(verify_connection(&list[0], &list[1], 1), "2→1 B");
+        assert!(verify_connection(&list[0], &list[2], 2), "3→1 C");
+        assert!(verify_connection(&list[1], &list[3], 1), "4→2 B");
+        assert!(verify_connection(&list[2], &list[4], 1), "5→3 B");
+
+        // Cumulative error on both leaf triangles
+        assert_side_lengths_match(&list[3], "tree_leaf[3]", EPSILON);
+        assert_side_lengths_match(&list[4], "tree_leaf[4]", EPSILON);
+    }
+
+    #[test]
+    fn test_chain_10_triangles_stress_cumulative_error() {
+        // 10-deep chain: stress test for floating-point accumulation
+        // Each triangle: A=parent.B, shrinking by 0.5 per level
+        let rows = vec![
+            (15.0, 14.0, 13.0, -1, -1), // 1
+            (14.0, 13.0, 12.0,  1,  1),  // 2
+            (13.0, 12.0, 11.0,  2,  1),  // 3
+            (12.0, 11.0, 10.0,  3,  1),  // 4
+            (11.0, 10.0,  9.0,  4,  1),  // 5
+            (10.0,  9.0,  8.0,  5,  1),  // 6
+            ( 9.0,  8.0,  7.0,  6,  1),  // 7
+            ( 8.0,  7.0,  6.0,  7,  1),  // 8
+            ( 7.0,  6.0,  5.0,  8,  1),  // 9
+            ( 6.0,  5.0,  4.0,  9,  1),  // 10
+        ];
+        let list = build_connected_list(&rows).unwrap();
+        assert_eq!(list.len(), 10);
+
+        // Verify all 9 connections
+        for i in 0..9 {
+            assert!(verify_connection(&list[i], &list[i + 1], 1),
+                "Connection {}->{} failed", i + 1, i + 2);
+        }
+
+        // Cumulative error on ALL triangles must stay < 0.01
+        for (idx, t) in list.iter().enumerate() {
+            assert_side_lengths_match(t, &format!("stress10[{}]", idx), EPSILON);
+        }
+    }
+
+    // ================================================================
     // Self-reference
     // ================================================================
 
