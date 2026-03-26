@@ -881,4 +881,70 @@ mod tests {
         assert!(DxfLinter::is_valid(&dxf_content),
             "Generated road section DXF must pass linter validation");
     }
+
+    // ================================================================
+    // parse_road_section_csv: minimal name,x,wl,wr format
+    // ================================================================
+
+    #[test]
+    fn test_marking_parse_csv_minimal_format() {
+        let csv = "name,x,wl,wr\nA,0.0,1.0,2.0\nB,10.0,1.5,2.5\nC,20.0,1.0,2.0\n";
+        let stations = parse_road_section_csv(csv).unwrap();
+        assert_eq!(stations.len(), 3);
+        assert_eq!(stations[0].name, "A");
+        assert!((stations[0].x - 0.0).abs() < 1e-9);
+        assert!((stations[0].wl - 1.0).abs() < 1e-9);
+        assert!((stations[0].wr - 2.0).abs() < 1e-9);
+        assert_eq!(stations[2].name, "C");
+        assert!((stations[2].x - 20.0).abs() < 1e-9);
+    }
+
+    // ================================================================
+    // parse_road_section_csv: English header (station,distance,left,right)
+    // ================================================================
+
+    #[test]
+    fn test_marking_parse_csv_english_station_header() {
+        let csv = "station,distance,left,right\nNo.0,0.0,2.5,2.5\nNo.1,20.0,3.0,3.0\n";
+        let stations = parse_road_section_csv(csv).unwrap();
+        assert_eq!(stations.len(), 2);
+        // "station" header contains "station" → maps to name_col
+        assert_eq!(stations[0].name, "No.0");
+        assert!((stations[0].x - 0.0).abs() < 1e-9);
+        assert!((stations[1].x - 20.0).abs() < 1e-9);
+    }
+
+    // ================================================================
+    // parse_road_section_csv: empty CSV returns error
+    // ================================================================
+
+    #[test]
+    fn test_marking_parse_csv_empty_string() {
+        let result = parse_road_section_csv("");
+        assert!(result.is_err(), "Empty string must return error");
+    }
+
+    #[test]
+    fn test_marking_parse_csv_whitespace_only() {
+        let result = parse_road_section_csv("   \n  \n  ");
+        assert!(result.is_err(), "Whitespace-only CSV must return error");
+    }
+
+    // ================================================================
+    // parse_road_section_csv: CSV with only comment lines
+    // ================================================================
+
+    #[test]
+    fn test_marking_parse_csv_only_comments() {
+        let csv = "# comment 1\n# comment 2\n# comment 3\n";
+        let result = parse_road_section_csv(csv);
+        assert!(result.is_err(), "CSV with only comments must return error");
+    }
+
+    #[test]
+    fn test_marking_parse_csv_header_then_only_comments() {
+        let csv = "name,x,wl,wr\n# comment\n# another\n";
+        let result = parse_road_section_csv(csv);
+        assert!(result.is_err(), "Header + only comments must return error");
+    }
 }
