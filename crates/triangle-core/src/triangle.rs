@@ -315,4 +315,251 @@ mod tests {
         let sum = t.angle_a() + t.angle_b() + t.angle_c();
         assert!((sum - 180.0).abs() < 0.01, "Angle sum should be 180, got {}", sum);
     }
+
+    // ================================================================
+    // Point
+    // ================================================================
+
+    #[test]
+    fn test_point_distance_to_same() {
+        let p = Point::new(3.0, 4.0);
+        assert!((p.distance_to(&p) - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_point_distance_to_origin() {
+        let a = Point::new(0.0, 0.0);
+        let b = Point::new(3.0, 4.0);
+        assert!((a.distance_to(&b) - 5.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_point_distance_symmetric() {
+        let a = Point::new(1.0, 2.0);
+        let b = Point::new(4.0, 6.0);
+        assert!((a.distance_to(&b) - b.distance_to(&a)).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_point_distance_negative_coords() {
+        let a = Point::new(-3.0, -4.0);
+        let b = Point::new(0.0, 0.0);
+        assert!((a.distance_to(&b) - 5.0).abs() < 1e-10);
+    }
+
+    // ================================================================
+    // Degenerate and invalid triangles
+    // ================================================================
+
+    #[test]
+    fn test_degenerate_collinear_triangle() {
+        // a + c == b → collinear, zero area
+        let t = Triangle {
+            lengths: [3.0, 7.0, 4.0],
+            points: [Point::new(0.0, 0.0); 3],
+            angle: 180.0,
+            parent_number: -1,
+            connection_type: -1,
+        };
+        assert!(!t.is_valid());
+        assert!((t.area() - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_degenerate_zero_side_a() {
+        let t = Triangle {
+            lengths: [0.0, 3.0, 3.0],
+            points: [Point::new(0.0, 0.0); 3],
+            angle: 180.0,
+            parent_number: -1,
+            connection_type: -1,
+        };
+        // 0 + 3 > 3 is false → invalid
+        assert!(!t.is_valid());
+    }
+
+    #[test]
+    fn test_degenerate_zero_all_sides() {
+        let t = Triangle {
+            lengths: [0.0, 0.0, 0.0],
+            points: [Point::new(0.0, 0.0); 3],
+            angle: 180.0,
+            parent_number: -1,
+            connection_type: -1,
+        };
+        assert!(!t.is_valid());
+        assert!(t.area().is_nan() || t.area() == 0.0);
+    }
+
+    #[test]
+    fn test_invalid_triangle_inequality_violation() {
+        // a > b + c
+        let t = Triangle {
+            lengths: [100.0, 1.0, 1.0],
+            points: [Point::new(0.0, 0.0); 3],
+            angle: 180.0,
+            parent_number: -1,
+            connection_type: -1,
+        };
+        assert!(!t.is_valid());
+    }
+
+    #[test]
+    fn test_invalid_negative_side() {
+        let t = Triangle {
+            lengths: [-3.0, 4.0, 5.0],
+            points: [Point::new(0.0, 0.0); 3],
+            angle: 180.0,
+            parent_number: -1,
+            connection_type: -1,
+        };
+        // Negative side → can't form valid triangle
+        assert!(!t.is_valid());
+    }
+
+    // ================================================================
+    // Area edge cases
+    // ================================================================
+
+    #[test]
+    fn test_area_very_small_triangle() {
+        // Micro triangle: sides 0.01, 0.01, 0.01
+        let t = Triangle::new(0.01, 0.01, 0.01);
+        assert!(t.is_valid());
+        // area = sqrt(3)/4 * 0.01^2 ≈ 0.0000433
+        // Rounded to 2 decimal → 0.00
+        assert!((t.area() - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_area_very_large_triangle() {
+        let t = Triangle::new(1000.0, 1000.0, 1000.0);
+        assert!(t.is_valid());
+        // area = sqrt(3)/4 * 1e6 ≈ 433012.70
+        let expected = (3.0_f64).sqrt() / 4.0 * 1_000_000.0;
+        assert!((t.area() - (expected * 100.0).round() / 100.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_area_isosceles() {
+        // Isosceles: 5, 5, 6
+        let t = Triangle::new(5.0, 5.0, 6.0);
+        assert!(t.is_valid());
+        // height = sqrt(5^2 - 3^2) = 4, area = 0.5 * 6 * 4 = 12.0
+        // But heron: s=8, sqrt(8*3*3*2)=sqrt(144)=12.0
+        assert!((t.area() - 12.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_area_obtuse_triangle() {
+        // Obtuse: 2, 3, 4 (angle opposite 4 > 90°)
+        let t = Triangle::new(2.0, 3.0, 4.0);
+        assert!(t.is_valid());
+        let s: f64 = (2.0 + 3.0 + 4.0) / 2.0;
+        let expected = (s * (s - 2.0) * (s - 3.0) * (s - 4.0)).sqrt();
+        assert!((t.area() - (expected * 100.0).round() / 100.0).abs() < 0.01);
+    }
+
+    // ================================================================
+    // Angle edge cases
+    // ================================================================
+
+    #[test]
+    fn test_angle_isosceles() {
+        // Isosceles 5, 5, 6: two angles equal
+        let t = Triangle::new(5.0, 5.0, 6.0);
+        // Sides A=5, B=5 are equal → angle_a == angle_b (opposite equal sides)
+        assert!((t.angle_a() - t.angle_b()).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_angle_obtuse() {
+        // 2, 3, 4: angle opposite to C=4 should be > 90°
+        let t = Triangle::new(2.0, 3.0, 4.0);
+        assert!(t.angle_c() > 90.0, "Obtuse angle should be > 90°, got {}", t.angle_c());
+    }
+
+    #[test]
+    fn test_angle_near_flat() {
+        // Nearly flat: a=1, b=100, c=100 → angle_a ≈ 0.57°
+        let t = Triangle::new(1.0, 100.0, 100.0);
+        assert!(t.angle_a() < 1.0, "Very narrow angle, got {}", t.angle_a());
+    }
+
+    #[test]
+    fn test_angles_sum_180_various() {
+        let cases = [
+            (3.0, 4.0, 5.0),
+            (10.0, 10.0, 10.0),
+            (1.0, 1.0, 1.5),
+            (7.0, 8.0, 9.0),
+            (0.5, 0.6, 0.7),
+        ];
+        for (a, b, c) in cases {
+            let t = Triangle::new(a, b, c);
+            let sum = t.angle_a() + t.angle_b() + t.angle_c();
+            assert!((sum - 180.0).abs() < 0.01,
+                "Triangle({},{},{}): angle sum = {}", a, b, c, sum);
+        }
+    }
+
+    // ================================================================
+    // Vertex placement edge cases
+    // ================================================================
+
+    #[test]
+    fn test_vertex_placement_angle_0() {
+        let t = Triangle::with_angle(3.0, 4.0, 5.0, Point::new(0.0, 0.0), 0.0);
+        // angle=0: AB along +x
+        assert!((t.point_ab().x - 3.0).abs() < 0.001);
+        assert!((t.point_ab().y - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_vertex_placement_angle_90() {
+        let t = Triangle::with_angle(3.0, 4.0, 5.0, Point::new(0.0, 0.0), 90.0);
+        // angle=90: AB along +y
+        assert!((t.point_ab().x - 0.0).abs() < 0.001);
+        assert!((t.point_ab().y - 3.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_vertex_placement_nonzero_origin() {
+        let origin = Point::new(10.0, 20.0);
+        let t = Triangle::with_angle(3.0, 4.0, 5.0, origin, 0.0);
+        assert!((t.point_ca().x - 10.0).abs() < 0.001);
+        assert!((t.point_ca().y - 20.0).abs() < 0.001);
+        assert!((t.point_ab().x - 13.0).abs() < 0.001);
+        assert!((t.point_ab().y - 20.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_vertex_distances_match_side_lengths() {
+        // For various triangles, verify computed vertex distances match input side lengths
+        let cases = [
+            (3.0, 4.0, 5.0),
+            (5.0, 5.0, 5.0),
+            (7.0, 8.0, 9.0),
+            (5.71, 9.1, 6.59),
+        ];
+        for (a, b, c) in cases {
+            let t = Triangle::new(a, b, c);
+            let ca_ab = t.point_ca().distance_to(t.point_ab());
+            let ab_bc = t.point_ab().distance_to(t.point_bc());
+            let bc_ca = t.point_bc().distance_to(t.point_ca());
+            assert!((ca_ab - a).abs() < 0.01, "({},{},{}): CA→AB={} expected {}", a, b, c, ca_ab, a);
+            assert!((ab_bc - b).abs() < 0.01, "({},{},{}): AB→BC={} expected {}", a, b, c, ab_bc, b);
+            assert!((bc_ca - c).abs() < 0.01, "({},{},{}): BC→CA={} expected {}", a, b, c, bc_ca, c);
+        }
+    }
+
+    #[test]
+    fn test_new_uses_angle_180() {
+        let t1 = Triangle::new(3.0, 4.0, 5.0);
+        let t2 = Triangle::with_angle(3.0, 4.0, 5.0, Point::new(0.0, 0.0), 180.0);
+        assert!((t1.point_ab().x - t2.point_ab().x).abs() < 0.001);
+        assert!((t1.point_ab().y - t2.point_ab().y).abs() < 0.001);
+        assert!((t1.point_bc().x - t2.point_bc().x).abs() < 0.001);
+        assert!((t1.point_bc().y - t2.point_bc().y).abs() < 0.001);
+    }
 }

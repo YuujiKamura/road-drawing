@@ -59,6 +59,12 @@ impl std::fmt::Display for CsvError {
     }
 }
 
+/// Parse a finite f64 (rejects NaN, Inf)
+fn parse_finite_f64(s: &str) -> Result<f64, ()> {
+    let v: f64 = s.parse().map_err(|_| ())?;
+    if v.is_finite() { Ok(v) } else { Err(()) }
+}
+
 /// Parse triangle list CSV text
 /// Detects format automatically: MIN (4 col), CONN (6 col), or FULL (28 col)
 pub fn parse_csv(text: &str) -> Result<ParsedCsv, CsvError> {
@@ -118,13 +124,13 @@ pub fn parse_csv(text: &str) -> Result<ParsedCsv, CsvError> {
         let number: i32 = parts[0].parse().map_err(|_| CsvError::InvalidNumber {
             row: row_num, col: "number", value: parts[0].to_string(),
         })?;
-        let length_a: f64 = parts[1].parse().map_err(|_| CsvError::InvalidNumber {
+        let length_a: f64 = parse_finite_f64(parts[1]).map_err(|_| CsvError::InvalidNumber {
             row: row_num, col: "length_a", value: parts[1].to_string(),
         })?;
-        let length_b: f64 = parts[2].parse().map_err(|_| CsvError::InvalidNumber {
+        let length_b: f64 = parse_finite_f64(parts[2]).map_err(|_| CsvError::InvalidNumber {
             row: row_num, col: "length_b", value: parts[2].to_string(),
         })?;
-        let length_c: f64 = parts[3].parse().map_err(|_| CsvError::InvalidNumber {
+        let length_c: f64 = parse_finite_f64(parts[3]).map_err(|_| CsvError::InvalidNumber {
             row: row_num, col: "length_c", value: parts[3].to_string(),
         })?;
 
@@ -336,5 +342,413 @@ zumennum, 1
         let csv = "";
         let result = parse_csv(csv);
         assert!(result.is_err());
+    }
+
+    // ================================================================
+    // Missing columns edge cases
+    // ================================================================
+
+    #[test]
+    fn test_parse_exactly_4_columns() {
+        let csv = "\
+koujiname, test
+rosenname, test
+gyousyaname, test
+zumennum, 1
+1, 3.0, 4.0, 5.0
+";
+        let result = parse_csv(csv).unwrap();
+        assert_eq!(result.triangles.len(), 1);
+        assert_eq!(result.triangles[0].parent_number, -1);
+    }
+
+    #[test]
+    fn test_parse_5_columns_treated_as_conn() {
+        // 5 columns: not enough for CONN (needs 6), but parse should handle
+        // columns 4 exists but 5 doesn't → should this be TooFewColumns?
+        // Looking at the code: col_count >= 6 → no, so falls back to (-1, -1)
+        let csv = "\
+koujiname, test
+rosenname, test
+gyousyaname, test
+zumennum, 1
+1, 3.0, 4.0, 5.0, 1
+";
+        let result = parse_csv(csv).unwrap();
+        // 5 columns < 6, so treated as MIN with extra column
+        assert_eq!(result.triangles[0].parent_number, -1);
+    }
+
+    #[test]
+    fn test_parse_3_columns_error() {
+        let csv = "\
+koujiname, test
+rosenname, test
+gyousyaname, test
+zumennum, 1
+1, 3.0, 4.0
+";
+        let result = parse_csv(csv);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CsvError::TooFewColumns { got: 3, need: 4, .. } => {},
+            other => panic!("Expected TooFewColumns, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_1_column_error() {
+        let csv = "\
+koujiname, test
+rosenname, test
+gyousyaname, test
+zumennum, 1
+1
+";
+        let result = parse_csv(csv);
+        assert!(result.is_err());
+    }
+
+    // ================================================================
+    // Unicode names in header
+    // ================================================================
+
+    #[test]
+    fn test_parse_unicode_header() {
+        let csv = "\
+koujiname, 道路補修工事　第１号
+rosenname, 国道１２３号線
+gyousyaname, 株式会社テスト建設
+zumennum, 図面-001
+1, 6.0, 5.0, 4.0
+";
+        let result = parse_csv(csv).unwrap();
+        assert_eq!(result.header.koujiname, "道路補修工事　第１号");
+        assert_eq!(result.header.rosenname, "国道１２３号線");
+        assert_eq!(result.header.gyousyaname, "株式会社テスト建設");
+        assert_eq!(result.header.zumennum, "図面-001");
+    }
+
+    #[test]
+    fn test_parse_header_with_commas_in_value() {
+        // splitn(2, ',') should keep everything after first comma
+        let csv = "\
+koujiname, 工事A, 追加情報
+rosenname, test
+gyousyaname, test
+zumennum, 1
+1, 6.0, 5.0, 4.0
+";
+        let result = parse_csv(csv).unwrap();
+        assert_eq!(result.header.koujiname, "工事A, 追加情報");
+    }
+
+    // ================================================================
+    // Empty lines and whitespace
+    // ================================================================
+
+    #[test]
+    fn test_parse_empty_lines_between_data() {
+        let csv = "\
+koujiname, test
+rosenname, test
+gyousyaname, test
+zumennum, 1
+1, 6.0, 5.0, 4.0
+
+2, 5.0, 4.0, 3.0
+
+3, 4.0, 3.5, 3.0
+";
+        let result = parse_csv(csv).unwrap();
+        assert_eq!(result.triangles.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_whitespace_in_values() {
+        let csv = "\
+koujiname, test
+rosenname, test
+gyousyaname, test
+zumennum, 1
+ 1 ,  6.0 ,  5.0 ,  4.0
+";
+        let result = parse_csv(csv).unwrap();
+        assert_eq!(result.triangles[0].number, 1);
+        assert!((result.triangles[0].length_a - 6.0).abs() < 0.001);
+    }
+
+    // ================================================================
+    // No header (data starts immediately)
+    // ================================================================
+
+    #[test]
+    fn test_parse_no_header() {
+        // First line doesn't match header keys → treated as data start
+        let csv = "1, 6.0, 5.0, 4.0\n2, 5.0, 4.0, 3.0\n";
+        let result = parse_csv(csv).unwrap();
+        assert_eq!(result.triangles.len(), 2);
+        assert_eq!(result.header.koujiname, "");
+    }
+
+    // ================================================================
+    // Header only, no data
+    // ================================================================
+
+    #[test]
+    fn test_parse_header_only_no_data() {
+        let csv = "\
+koujiname, test
+rosenname, test
+gyousyaname, test
+zumennum, 1
+";
+        let result = parse_csv(csv);
+        assert!(result.is_err());
+    }
+
+    // ================================================================
+    // Invalid number formats
+    // ================================================================
+
+    #[test]
+    fn test_parse_invalid_triangle_number() {
+        let csv = "\
+koujiname, test
+rosenname, test
+gyousyaname, test
+zumennum, 1
+abc, 6.0, 5.0, 4.0
+";
+        let result = parse_csv(csv);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CsvError::InvalidNumber { col: "number", .. } => {},
+            other => panic!("Expected InvalidNumber for number, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_length_a() {
+        let csv = "\
+koujiname, test
+rosenname, test
+gyousyaname, test
+zumennum, 1
+1, xyz, 5.0, 4.0
+";
+        let result = parse_csv(csv);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CsvError::InvalidNumber { col: "length_a", value, .. } => {
+                assert_eq!(value, "xyz");
+            },
+            other => panic!("Expected InvalidNumber for length_a, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_length_b() {
+        let csv = "\
+koujiname, test
+rosenname, test
+gyousyaname, test
+zumennum, 1
+1, 6.0, abc, 4.0
+";
+        let result = parse_csv(csv);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CsvError::InvalidNumber { col: "length_b", value, .. } => {
+                assert_eq!(value, "abc");
+            },
+            other => panic!("Expected InvalidNumber for length_b, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_length_c() {
+        let csv = "\
+koujiname, test
+rosenname, test
+gyousyaname, test
+zumennum, 1
+1, 6.0, 5.0, --
+";
+        let result = parse_csv(csv);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_parent_number() {
+        let csv = "\
+koujiname, test
+rosenname, test
+gyousyaname, test
+zumennum, 1
+1, 6.0, 5.0, 4.0, abc, 1
+";
+        let result = parse_csv(csv);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CsvError::InvalidNumber { col: "parent_number", .. } => {},
+            other => panic!("Expected InvalidNumber for parent_number, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_connection_type() {
+        let csv = "\
+koujiname, test
+rosenname, test
+gyousyaname, test
+zumennum, 1
+1, 6.0, 5.0, 4.0, -1, xyz
+";
+        let result = parse_csv(csv);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CsvError::InvalidNumber { col: "connection_type", .. } => {},
+            other => panic!("Expected InvalidNumber for connection_type, got {:?}", other),
+        }
+    }
+
+    // ================================================================
+    // CsvError Display
+    // ================================================================
+
+    #[test]
+    fn test_csv_error_display_invalid_format() {
+        let err = CsvError::InvalidFormat("test error".to_string());
+        assert!(format!("{}", err).contains("test error"));
+    }
+
+    #[test]
+    fn test_csv_error_display_too_few_columns() {
+        let err = CsvError::TooFewColumns { row: 5, got: 2, need: 4 };
+        let msg = format!("{}", err);
+        assert!(msg.contains("5"));
+        assert!(msg.contains("2"));
+        assert!(msg.contains("4"));
+    }
+
+    #[test]
+    fn test_csv_error_display_invalid_number() {
+        let err = CsvError::InvalidNumber { row: 3, col: "length_a", value: "xyz".to_string() };
+        let msg = format!("{}", err);
+        assert!(msg.contains("xyz"));
+        assert!(msg.contains("length_a"));
+    }
+
+    // ================================================================
+    // CONN format roundtrip data integrity
+    // ================================================================
+
+    #[test]
+    fn test_parse_conn_preserves_all_fields() {
+        let csv = "\
+koujiname, test
+rosenname, test
+gyousyaname, test
+zumennum, 1
+1, 6.0, 5.0, 4.0, -1, -1
+2, 5.0, 4.0, 3.0, 1, 1
+3, 4.0, 3.5, 3.0, 1, 2
+";
+        let result = parse_csv(csv).unwrap();
+        let t2 = &result.triangles[1];
+        assert_eq!(t2.number, 2);
+        assert!((t2.length_a - 5.0).abs() < 0.001);
+        assert!((t2.length_b - 4.0).abs() < 0.001);
+        assert!((t2.length_c - 3.0).abs() < 0.001);
+        assert_eq!(t2.parent_number, 1);
+        assert_eq!(t2.connection_type, 1);
+    }
+
+    // ================================================================
+    // Partial header
+    // ================================================================
+
+    #[test]
+    fn test_parse_partial_header() {
+        // Only koujiname and rosenname, then data starts
+        let csv = "\
+koujiname, test
+rosenname, test
+1, 6.0, 5.0, 4.0
+";
+        let result = parse_csv(csv).unwrap();
+        assert_eq!(result.header.koujiname, "test");
+        assert_eq!(result.header.rosenname, "test");
+        assert_eq!(result.header.gyousyaname, ""); // not provided
+        assert_eq!(result.triangles.len(), 1);
+    }
+
+    // ================================================================
+    // CsvHeader and TriangleRow derive traits
+    // ================================================================
+
+    #[test]
+    fn test_csv_header_default() {
+        let h = CsvHeader::default();
+        assert_eq!(h.koujiname, "");
+        assert_eq!(h.rosenname, "");
+        assert_eq!(h.gyousyaname, "");
+        assert_eq!(h.zumennum, "");
+    }
+
+    #[test]
+    fn test_csv_header_clone_eq() {
+        let h1 = CsvHeader {
+            koujiname: "test".to_string(),
+            rosenname: "route".to_string(),
+            gyousyaname: "builder".to_string(),
+            zumennum: "1".to_string(),
+        };
+        let h2 = h1.clone();
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_triangle_row_clone_eq() {
+        let r1 = TriangleRow {
+            number: 1, length_a: 6.0, length_b: 5.0, length_c: 4.0,
+            parent_number: -1, connection_type: -1,
+        };
+        let r2 = r1.clone();
+        assert_eq!(r1, r2);
+    }
+
+    // ================================================================
+    // Only empty lines after header
+    // ================================================================
+
+    #[test]
+    fn test_parse_only_empty_lines_after_header() {
+        let csv = "\
+koujiname, test
+rosenname, test
+gyousyaname, test
+zumennum, 1
+
+
+";
+        let result = parse_csv(csv);
+        assert!(result.is_err());
+    }
+
+    // ================================================================
+    // Large number of triangles
+    // ================================================================
+
+    #[test]
+    fn test_parse_many_triangles() {
+        let mut csv = String::from("koujiname, test\nrosenname, test\ngyousyaname, test\nzumennum, 1\n");
+        for i in 1..=100 {
+            csv.push_str(&format!("{}, 6.0, 5.0, 4.0\n", i));
+        }
+        let result = parse_csv(&csv).unwrap();
+        assert_eq!(result.triangles.len(), 100);
+        assert_eq!(result.triangles[99].number, 100);
     }
 }

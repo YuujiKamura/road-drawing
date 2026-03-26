@@ -288,4 +288,253 @@ mod tests {
         let result = build_connected_list(&rows);
         assert!(result.is_err());
     }
+
+    // ================================================================
+    // 3+ chain connections with cumulative error check
+    // ================================================================
+
+    #[test]
+    fn test_chain_3_levels_type1() {
+        // Chain: 1 → 2 (B) → 3 (B) — all type1
+        let rows = vec![
+            (6.0, 5.0, 4.0, -1, -1),  // 1
+            (5.0, 4.0, 3.0,  1,  1),  // 2: parent 1's B=5
+            (4.0, 3.0, 2.5,  2,  1),  // 3: parent 2's B=4
+        ];
+        let list = build_connected_list(&rows).unwrap();
+        assert_eq!(list.len(), 3);
+        assert!(verify_connection(&list[0], &list[1], 1));
+        assert!(verify_connection(&list[1], &list[2], 1));
+    }
+
+    #[test]
+    fn test_chain_3_levels_type2() {
+        // Chain: 1 → 2 (C) → 3 (C) — all type2
+        let rows = vec![
+            (6.0, 5.0, 4.0, -1, -1),  // 1
+            (4.0, 3.5, 3.0,  1,  2),  // 2: parent 1's C=4
+            (3.0, 2.5, 2.0,  2,  2),  // 3: parent 2's C=3
+        ];
+        let list = build_connected_list(&rows).unwrap();
+        assert_eq!(list.len(), 3);
+        assert!(verify_connection(&list[0], &list[1], 2));
+        assert!(verify_connection(&list[1], &list[2], 2));
+    }
+
+    #[test]
+    fn test_chain_cumulative_error() {
+        // Verify that vertex positions remain accurate after 3-level chain
+        let rows = vec![
+            (6.0, 5.0, 4.0, -1, -1),
+            (5.0, 4.0, 3.0,  1,  1),
+            (4.0, 3.0, 2.5,  2,  1),
+        ];
+        let list = build_connected_list(&rows).unwrap();
+
+        // Check that vertex distances match side lengths for the deepest triangle
+        let t = &list[2];
+        let ca_ab = t.point_ca().distance_to(t.point_ab());
+        let ab_bc = t.point_ab().distance_to(t.point_bc());
+        let bc_ca = t.point_bc().distance_to(t.point_ca());
+
+        assert!((ca_ab - 4.0).abs() < 0.01, "Level 3 CA→AB: {} vs 4.0", ca_ab);
+        assert!((ab_bc - 3.0).abs() < 0.01, "Level 3 AB→BC: {} vs 3.0", ab_bc);
+        assert!((bc_ca - 2.5).abs() < 0.01, "Level 3 BC→CA: {} vs 2.5", bc_ca);
+    }
+
+    #[test]
+    fn test_chain_mixed_types() {
+        // Chain: 1 → 2 (B) → 3 (C)
+        let rows = vec![
+            (6.0, 5.0, 4.0, -1, -1),
+            (5.0, 4.0, 3.0,  1,  1),  // parent 1's B=5
+            (3.0, 2.5, 2.0,  2,  2),  // parent 2's C=3
+        ];
+        let list = build_connected_list(&rows).unwrap();
+        assert_eq!(list.len(), 3);
+        assert!(verify_connection(&list[0], &list[1], 1));
+        assert!(verify_connection(&list[1], &list[2], 2));
+    }
+
+    // ================================================================
+    // Self-reference
+    // ================================================================
+
+    #[test]
+    fn test_self_reference() {
+        // Triangle 1 references itself as parent
+        let rows = vec![
+            (6.0, 5.0, 4.0, 1, 1),  // parent=1 but index 0 hasn't been pushed yet
+        ];
+        // parent_idx = 0, triangles.len() = 0 → ParentNotFound
+        let result = build_connected_list(&rows);
+        assert!(result.is_err());
+    }
+
+    // ================================================================
+    // Forward reference (parent defined after child)
+    // ================================================================
+
+    #[test]
+    fn test_forward_reference_parent() {
+        // Triangle 1 references parent 2 which hasn't been processed yet
+        let rows = vec![
+            (5.0, 4.0, 3.0, 2, 1),   // references triangle 2
+            (6.0, 5.0, 4.0, -1, -1),  // triangle 2
+        ];
+        let result = build_connected_list(&rows);
+        assert!(result.is_err());
+    }
+
+    // ================================================================
+    // Invalid connection types
+    // ================================================================
+
+    #[test]
+    fn test_invalid_connection_type_0() {
+        let rows = vec![
+            (6.0, 5.0, 4.0, -1, -1),
+            (5.0, 4.0, 3.0, 1, 0),  // connection_type 0 is invalid
+        ];
+        let result = build_connected_list(&rows);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_connection_type_3() {
+        let rows = vec![
+            (6.0, 5.0, 4.0, -1, -1),
+            (5.0, 4.0, 3.0, 1, 3),  // connection_type 3 is invalid
+        ];
+        let result = build_connected_list(&rows);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_connection_type_negative() {
+        let rows = vec![
+            (6.0, 5.0, 4.0, -1, -1),
+            (5.0, 4.0, 3.0, 1, -2), // -2 is invalid
+        ];
+        let result = build_connected_list(&rows);
+        assert!(result.is_err());
+    }
+
+    // ================================================================
+    // Edge length mismatch tolerance
+    // ================================================================
+
+    #[test]
+    fn test_edge_length_within_epsilon() {
+        // Mismatch just under EPSILON (0.01) should pass
+        let rows = vec![
+            (6.0, 5.0, 4.0, -1, -1),
+            (5.005, 4.0, 3.0, 1, 1),  // diff = 0.005 < 0.01
+        ];
+        let result = build_connected_list(&rows);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_edge_length_at_epsilon_boundary() {
+        // Mismatch exactly at EPSILON boundary
+        let rows = vec![
+            (6.0, 5.0, 4.0, -1, -1),
+            (5.011, 4.0, 3.0, 1, 1),  // diff = 0.011 > 0.01 → fail
+        ];
+        let result = build_connected_list(&rows);
+        assert!(result.is_err());
+    }
+
+    // ================================================================
+    // verify_connection edge cases
+    // ================================================================
+
+    #[test]
+    fn test_verify_connection_invalid_type() {
+        let t1 = Triangle::new(3.0, 4.0, 5.0);
+        let t2 = Triangle::new(4.0, 3.0, 2.0);
+        assert!(!verify_connection(&t1, &t2, 0));
+        assert!(!verify_connection(&t1, &t2, 3));
+        assert!(!verify_connection(&t1, &t2, -1));
+    }
+
+    // ================================================================
+    // Single / empty
+    // ================================================================
+
+    #[test]
+    fn test_single_independent_triangle() {
+        let rows = vec![(6.0, 5.0, 4.0, -1, -1)];
+        let list = build_connected_list(&rows).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].parent_number, -1);
+    }
+
+    #[test]
+    fn test_empty_rows() {
+        let rows: Vec<(f64, f64, f64, i32, i32)> = vec![];
+        let list = build_connected_list(&rows).unwrap();
+        assert!(list.is_empty());
+    }
+
+    #[test]
+    fn test_multiple_independent_triangles() {
+        let rows = vec![
+            (3.0, 4.0, 5.0, -1, -1),
+            (5.0, 5.0, 5.0, -1, -1),
+            (7.0, 8.0, 9.0, -1, -1),
+        ];
+        let list = build_connected_list(&rows).unwrap();
+        assert_eq!(list.len(), 3);
+        for t in &list {
+            assert_eq!(t.parent_number, -1);
+            assert_eq!(t.connection_type, -1);
+        }
+    }
+
+    // ================================================================
+    // ConnectionError Display
+    // ================================================================
+
+    #[test]
+    fn test_error_display_parent_not_found() {
+        let err = ConnectionError::ParentNotFound { child: 2, parent: 99 };
+        let msg = format!("{}", err);
+        assert!(msg.contains("99"));
+        assert!(msg.contains("2"));
+    }
+
+    #[test]
+    fn test_error_display_edge_mismatch() {
+        let err = ConnectionError::EdgeLengthMismatch {
+            child: 2, child_a: 3.0, parent: 1, parent_edge: 5.0, connection_type: 1,
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("3"));
+        assert!(msg.contains("5"));
+    }
+
+    #[test]
+    fn test_error_display_invalid_type() {
+        let err = ConnectionError::InvalidConnectionType { child: 2, connection_type: 0 };
+        let msg = format!("{}", err);
+        assert!(msg.contains("0"));
+    }
+
+    // ================================================================
+    // Parent number edge: parent=0 (1-based, so 0 is underflow)
+    // ================================================================
+
+    #[test]
+    fn test_parent_number_zero() {
+        // parent_num=0 → parent_idx = -1 as usize → huge number → out of bounds
+        let rows = vec![
+            (6.0, 5.0, 4.0, -1, -1),
+            (5.0, 4.0, 3.0, 0, 1),  // parent=0
+        ];
+        let result = build_connected_list(&rows);
+        // 0 - 1 = underflow → parent_idx huge → ParentNotFound
+        assert!(result.is_err());
+    }
 }
