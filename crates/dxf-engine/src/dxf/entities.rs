@@ -497,4 +497,204 @@ mod tests {
         let cloned = poly.clone();
         assert_eq!(poly, cloned);
     }
+
+    // ================================================================
+    // Boundary values
+    // ================================================================
+
+    #[test]
+    fn test_dxf_line_zero_length() {
+        let line = DxfLine::new(5.0, 5.0, 5.0, 5.0);
+        assert_eq!(line.x1, line.x2);
+        assert_eq!(line.y1, line.y2);
+    }
+
+    #[test]
+    fn test_dxf_line_negative_coords() {
+        let line = DxfLine::new(-100.0, -200.0, -300.0, -400.0);
+        assert_eq!(line.x1, -100.0);
+        assert_eq!(line.y2, -400.0);
+    }
+
+    #[test]
+    fn test_dxf_line_large_coords() {
+        let line = DxfLine::new(1e12, 1e12, -1e12, -1e12);
+        assert_eq!(line.x1, 1e12);
+        assert_eq!(line.x2, -1e12);
+    }
+
+    #[test]
+    fn test_dxf_line_color_zero() {
+        let line = DxfLine::new(0.0, 0.0, 1.0, 1.0).color(0);
+        assert_eq!(line.color, 0);
+    }
+
+    #[test]
+    fn test_dxf_line_color_negative() {
+        let line = DxfLine::new(0.0, 0.0, 1.0, 1.0).color(-1);
+        assert_eq!(line.color, -1);
+    }
+
+    #[test]
+    fn test_dxf_line_empty_layer() {
+        let line = DxfLine::new(0.0, 0.0, 1.0, 1.0).layer("");
+        assert_eq!(line.layer, "");
+    }
+
+    #[test]
+    fn test_dxf_line_builder_chain_overwrite() {
+        let line = DxfLine::new(0.0, 0.0, 1.0, 1.0)
+            .color(3)
+            .color(5)
+            .layer("A")
+            .layer("B");
+        assert_eq!(line.color, 5);
+        assert_eq!(line.layer, "B");
+    }
+
+    #[test]
+    fn test_dxf_line_partial_eq_different() {
+        let a = DxfLine::new(0.0, 0.0, 1.0, 1.0);
+        let b = DxfLine::new(0.0, 0.0, 1.0, 2.0);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_dxf_line_partial_eq_layer_differs() {
+        let a = DxfLine::new(0.0, 0.0, 1.0, 1.0).layer("A");
+        let b = DxfLine::new(0.0, 0.0, 1.0, 1.0).layer("B");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_dxf_text_empty_string() {
+        let text = DxfText::new(0.0, 0.0, "");
+        assert_eq!(text.text, "");
+    }
+
+    #[test]
+    fn test_dxf_text_multiline_content() {
+        let text = DxfText::new(0.0, 0.0, "line1\nline2");
+        assert_eq!(text.text, "line1\nline2");
+    }
+
+    #[test]
+    fn test_dxf_text_height_zero() {
+        let text = DxfText::new(0.0, 0.0, "x").height(0.0);
+        assert_eq!(text.height, 0.0);
+    }
+
+    #[test]
+    fn test_dxf_text_negative_rotation() {
+        let text = DxfText::new(0.0, 0.0, "x").rotation(-90.0);
+        assert_eq!(text.rotation, -90.0);
+    }
+
+    #[test]
+    fn test_dxf_text_rotation_360() {
+        let text = DxfText::new(0.0, 0.0, "x").rotation(360.0);
+        assert_eq!(text.rotation, 360.0);
+    }
+
+    #[test]
+    fn test_dxf_text_all_alignments() {
+        for h in [HorizontalAlignment::Left, HorizontalAlignment::Center, HorizontalAlignment::Right] {
+            for v in [VerticalAlignment::Baseline, VerticalAlignment::Bottom, VerticalAlignment::Middle, VerticalAlignment::Top] {
+                let text = DxfText::new(0.0, 0.0, "x").align_h(h).align_v(v);
+                assert_eq!(text.align_h, h);
+                assert_eq!(text.align_v, v);
+            }
+        }
+    }
+
+    #[test]
+    fn test_dxf_text_partial_eq_different_content() {
+        let a = DxfText::new(0.0, 0.0, "hello");
+        let b = DxfText::new(0.0, 0.0, "world");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_dxf_circle_zero_radius() {
+        let c = DxfCircle::new(0.0, 0.0, 0.0);
+        assert_eq!(c.radius, 0.0);
+    }
+
+    #[test]
+    fn test_dxf_circle_large_radius() {
+        let c = DxfCircle::new(0.0, 0.0, 1e9);
+        assert_eq!(c.radius, 1e9);
+    }
+
+    #[test]
+    fn test_dxf_lwpolyline_single_vertex() {
+        let poly = DxfLwPolyline::new(vec![(5.0, 5.0)]);
+        assert_eq!(poly.vertices.len(), 1);
+    }
+
+    #[test]
+    fn test_dxf_lwpolyline_empty_vertices() {
+        let poly = DxfLwPolyline::new(vec![]);
+        assert!(poly.vertices.is_empty());
+        assert!(!poly.closed);
+    }
+
+    #[test]
+    fn test_dxf_lwpolyline_add_vertex_chain() {
+        let poly = DxfLwPolyline::default()
+            .add_vertex(0.0, 0.0)
+            .add_vertex(1.0, 0.0)
+            .add_vertex(1.0, 1.0)
+            .add_vertex(0.0, 1.0);
+        assert_eq!(poly.vertices.len(), 4);
+        assert_eq!(poly.vertices[3], (0.0, 1.0));
+    }
+
+    #[test]
+    fn test_dxf_lwpolyline_set_closed_toggle() {
+        let poly = DxfLwPolyline::new(vec![(0.0, 0.0)])
+            .set_closed(true)
+            .set_closed(false);
+        assert!(!poly.closed);
+    }
+
+    #[test]
+    fn test_dxf_line_debug_format() {
+        let line = DxfLine::new(1.0, 2.0, 3.0, 4.0);
+        let debug = format!("{:?}", line);
+        assert!(debug.contains("DxfLine"));
+    }
+
+    #[test]
+    fn test_dxf_text_debug_format() {
+        let text = DxfText::new(0.0, 0.0, "test");
+        let debug = format!("{:?}", text);
+        assert!(debug.contains("DxfText"));
+    }
+
+    #[test]
+    fn test_dxf_circle_debug_format() {
+        let c = DxfCircle::new(0.0, 0.0, 1.0);
+        let debug = format!("{:?}", c);
+        assert!(debug.contains("DxfCircle"));
+    }
+
+    #[test]
+    fn test_dxf_lwpolyline_debug_format() {
+        let poly = DxfLwPolyline::new(vec![(0.0, 0.0)]);
+        let debug = format!("{:?}", poly);
+        assert!(debug.contains("DxfLwPolyline"));
+    }
+
+    #[test]
+    fn test_dxf_line_unicode_layer() {
+        let line = DxfLine::new(0.0, 0.0, 1.0, 1.0).layer("中心線レイヤー");
+        assert_eq!(line.layer, "中心線レイヤー");
+    }
+
+    #[test]
+    fn test_dxf_text_unicode_content() {
+        let text = DxfText::new(0.0, 0.0, "横断歩道 No.1+5");
+        assert_eq!(text.text, "横断歩道 No.1+5");
+    }
 }

@@ -411,4 +411,253 @@ mod tests {
         assert_eq!(doc.lines[0].layer, "中心線");
         assert_eq!(doc.lines[1].layer, "横断歩道");
     }
+
+    // ================================================================
+    // Additional roundtrip tests
+    // ================================================================
+
+    #[test]
+    fn test_roundtrip_line_negative_coords() {
+        let lines = vec![DxfLine::new(-100.0, -200.0, -300.0, -400.0)];
+        let writer = DxfWriter::new();
+        let dxf_text = writer.write(&lines, &[]);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert!((doc.lines[0].x1 - (-100.0)).abs() < 0.001);
+        assert!((doc.lines[0].y2 - (-400.0)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_roundtrip_line_zero_length() {
+        let lines = vec![DxfLine::new(5.0, 5.0, 5.0, 5.0)];
+        let writer = DxfWriter::new();
+        let dxf_text = writer.write(&lines, &[]);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert!((doc.lines[0].x1 - doc.lines[0].x2).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_roundtrip_text_all_fields() {
+        use crate::dxf::entities::{HorizontalAlignment, VerticalAlignment};
+        let texts = vec![DxfText::new(10.0, 20.0, "Full")
+            .height(5.0)
+            .rotation(45.0)
+            .color(3)
+            .align_h(HorizontalAlignment::Center)
+            .align_v(VerticalAlignment::Middle)
+            .layer("MyLayer")];
+        let writer = DxfWriter::new();
+        let dxf_text = writer.write(&[], &texts);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        let t = &doc.texts[0];
+        assert!((t.x - 10.0).abs() < 0.001);
+        assert!((t.y - 20.0).abs() < 0.001);
+        assert_eq!(t.text, "Full");
+        assert!((t.height - 5.0).abs() < 0.001);
+        assert!((t.rotation - 45.0).abs() < 0.001);
+        assert_eq!(t.color, 3);
+        assert_eq!(t.align_h, HorizontalAlignment::Center);
+        assert_eq!(t.align_v, VerticalAlignment::Middle);
+        assert_eq!(t.layer, "MyLayer");
+    }
+
+    #[test]
+    fn test_roundtrip_text_default_alignment() {
+        let texts = vec![DxfText::new(0.0, 0.0, "Default")];
+        let writer = DxfWriter::new();
+        let dxf_text = writer.write(&[], &texts);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert_eq!(doc.texts[0].align_h, HorizontalAlignment::Left);
+        assert_eq!(doc.texts[0].align_v, VerticalAlignment::Baseline);
+    }
+
+    #[test]
+    fn test_roundtrip_circle_with_style() {
+        let circles = vec![DxfCircle::new(100.0, 200.0, 50.0).color(3).layer("Circles")];
+        let mut writer = DxfWriter::new();
+        let dxf_text = writer.write_all(&[], &[], &circles, &[]);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert_eq!(doc.circles[0].color, 3);
+        assert_eq!(doc.circles[0].layer, "Circles");
+    }
+
+    #[test]
+    fn test_roundtrip_lwpolyline_closed() {
+        let polylines = vec![DxfLwPolyline::closed(vec![
+            (0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0),
+        ])];
+        let mut writer = DxfWriter::new();
+        let dxf_text = writer.write_all(&[], &[], &[], &polylines);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert!(doc.polylines[0].closed);
+        assert_eq!(doc.polylines[0].vertices.len(), 4);
+    }
+
+    #[test]
+    fn test_roundtrip_lwpolyline_with_style() {
+        let polylines = vec![DxfLwPolyline::new(vec![(1.0, 2.0), (3.0, 4.0)])
+            .color(5)
+            .layer("Outline")];
+        let mut writer = DxfWriter::new();
+        let dxf_text = writer.write_all(&[], &[], &[], &polylines);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert_eq!(doc.polylines[0].color, 5);
+        assert_eq!(doc.polylines[0].layer, "Outline");
+    }
+
+    #[test]
+    fn test_roundtrip_all_entity_types() {
+        let lines = vec![DxfLine::new(0.0, 0.0, 10.0, 10.0)];
+        let texts = vec![DxfText::new(5.0, 5.0, "Label")];
+        let circles = vec![DxfCircle::new(20.0, 20.0, 5.0)];
+        let polylines = vec![DxfLwPolyline::new(vec![(30.0, 30.0), (40.0, 40.0)])];
+        let mut writer = DxfWriter::new();
+        let dxf_text = writer.write_all(&lines, &texts, &circles, &polylines);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert_eq!(doc.lines.len(), 1);
+        assert_eq!(doc.texts.len(), 1);
+        assert_eq!(doc.circles.len(), 1);
+        assert_eq!(doc.polylines.len(), 1);
+    }
+
+    #[test]
+    fn test_roundtrip_many_lines() {
+        let lines: Vec<DxfLine> = (0..100).map(|i| {
+            DxfLine::new(i as f64, 0.0, (i + 1) as f64, 0.0)
+        }).collect();
+        let writer = DxfWriter::new();
+        let dxf_text = writer.write(&lines, &[]);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert_eq!(doc.lines.len(), 100);
+    }
+
+    // ================================================================
+    // Error cases & malformed DXF
+    // ================================================================
+
+    #[test]
+    fn test_parse_completely_empty() {
+        let result = parse_dxf("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_garbage_input() {
+        let result = parse_dxf("this is not a dxf file at all");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_header_only() {
+        let dxf = "0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1015\n0\nENDSEC\n0\nEOF\n";
+        let result = parse_dxf(dxf);
+        assert!(result.is_err()); // No ENTITIES section
+    }
+
+    #[test]
+    fn test_parse_entities_with_unknown_entity_type() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nSPLINE\n5\n100\n0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        // Unknown entity type should be skipped
+        assert!(doc.lines.is_empty());
+        assert!(doc.texts.is_empty());
+    }
+
+    #[test]
+    fn test_parse_line_missing_end_coords() {
+        // LINE with only start coords, no end coords
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nLINE\n8\n0\n10\n5.0\n20\n10.0\n0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.lines.len(), 1);
+        assert!((doc.lines[0].x1 - 5.0).abs() < 0.001);
+        // End coords default to 0
+        assert!((doc.lines[0].x2 - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_text_minimal() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nTEXT\n1\nHello\n0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.texts.len(), 1);
+        assert_eq!(doc.texts[0].text, "Hello");
+    }
+
+    #[test]
+    fn test_parse_handles_extra_whitespace() {
+        let dxf = "  0  \n  SECTION  \n  2  \n  ENTITIES  \n  0  \n  ENDSEC  \n  0  \n  EOF  \n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert!(doc.lines.is_empty());
+    }
+
+    #[test]
+    fn test_parse_document_default() {
+        let doc = DxfDocument::default();
+        assert!(doc.lines.is_empty());
+        assert!(doc.texts.is_empty());
+        assert!(doc.circles.is_empty());
+        assert!(doc.polylines.is_empty());
+    }
+
+    #[test]
+    fn test_parse_document_clone() {
+        let mut doc = DxfDocument::default();
+        doc.lines.push(DxfLine::new(1.0, 2.0, 3.0, 4.0));
+        let cloned = doc.clone();
+        assert_eq!(cloned.lines.len(), 1);
+    }
+
+    #[test]
+    fn test_reader_error_display() {
+        let err = ReaderError::NoEntitiesSection;
+        assert_eq!(format!("{}", err), "No ENTITIES section found");
+
+        let err2 = ReaderError::MalformedGroupCode("ABC".to_string());
+        assert_eq!(format!("{}", err2), "Malformed group code: ABC");
+    }
+
+    #[test]
+    fn test_roundtrip_text_empty_content() {
+        let texts = vec![DxfText::new(0.0, 0.0, "")];
+        let writer = DxfWriter::new();
+        let dxf_text = writer.write(&[], &texts);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert_eq!(doc.texts.len(), 1);
+        assert_eq!(doc.texts[0].text, "");
+    }
+
+    #[test]
+    fn test_roundtrip_preserves_color() {
+        let lines = vec![
+            DxfLine::new(0.0, 0.0, 1.0, 1.0).color(1),
+            DxfLine::new(0.0, 0.0, 1.0, 1.0).color(255),
+        ];
+        let writer = DxfWriter::new();
+        let dxf_text = writer.write(&lines, &[]);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert_eq!(doc.lines[0].color, 1);
+        assert_eq!(doc.lines[1].color, 255);
+    }
+
+    #[test]
+    fn test_roundtrip_large_coordinates() {
+        let lines = vec![DxfLine::new(999999.999, -888888.888, 777777.777, -666666.666)];
+        let writer = DxfWriter::new();
+        let dxf_text = writer.write(&lines, &[]);
+        let doc = parse_dxf(&dxf_text).unwrap();
+        assert!((doc.lines[0].x1 - 999999.999).abs() < 0.01);
+        assert!((doc.lines[0].y1 - (-888888.888)).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_mixed_with_unknown_entities() {
+        let dxf = "\
+0\nSECTION\n2\nENTITIES\n\
+0\nLINE\n8\n0\n10\n1\n20\n2\n11\n3\n21\n4\n\
+0\nSPLINE\n8\n0\n\
+0\nTEXT\n8\n0\n10\n5\n20\n6\n1\nHello\n\
+0\nENDSEC\n0\nEOF\n";
+        let doc = parse_dxf(dxf).unwrap();
+        assert_eq!(doc.lines.len(), 1);
+        assert_eq!(doc.texts.len(), 1);
+        assert_eq!(doc.texts[0].text, "Hello");
+    }
 }

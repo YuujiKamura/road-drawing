@@ -35,7 +35,7 @@ impl HandleGenerator {
     /// Generates the next handle and increments the counter
     pub fn next(&mut self) -> String {
         let handle = self.next;
-        self.next += 1;
+        self.next = self.next.saturating_add(1);
         format!("{:X}", handle)
     }
 
@@ -102,5 +102,96 @@ mod tests {
     fn test_handle_format_uppercase() {
         let mut gen = HandleGenerator::with_start(0xABC);
         assert_eq!(gen.next(), "ABC");
+    }
+
+    // ================================================================
+    // Boundary values
+    // ================================================================
+
+    #[test]
+    fn test_handle_generator_start_zero() {
+        let mut gen = HandleGenerator::with_start(0);
+        assert_eq!(gen.next(), "0");
+        assert_eq!(gen.next(), "1");
+    }
+
+    #[test]
+    fn test_handle_generator_start_one() {
+        let mut gen = HandleGenerator::with_start(1);
+        assert_eq!(gen.next(), "1");
+    }
+
+    #[test]
+    fn test_handle_generator_start_max() {
+        let mut gen = HandleGenerator::with_start(0xFFFF_FFFE);
+        assert_eq!(gen.next(), "FFFFFFFE");
+        assert_eq!(gen.next(), "FFFFFFFF");
+    }
+
+    #[test]
+    fn test_handle_current_value() {
+        let gen = HandleGenerator::new();
+        assert_eq!(gen.current_value(), 0x100);
+    }
+
+    #[test]
+    fn test_handle_current_value_after_next() {
+        let mut gen = HandleGenerator::new();
+        gen.next();
+        gen.next();
+        assert_eq!(gen.current_value(), 0x102);
+    }
+
+    #[test]
+    fn test_handle_default_equals_new() {
+        let a = HandleGenerator::new();
+        let b = HandleGenerator::default();
+        assert_eq!(a.current_value(), b.current_value());
+    }
+
+    #[test]
+    fn test_handle_clone() {
+        let mut gen = HandleGenerator::new();
+        gen.next();
+        let cloned = gen.clone();
+        assert_eq!(gen.current_value(), cloned.current_value());
+    }
+
+    #[test]
+    fn test_handle_clone_independence() {
+        let mut gen = HandleGenerator::new();
+        let mut cloned = gen.clone();
+        gen.next();
+        // Cloned should remain at original position
+        assert_ne!(gen.current_value(), cloned.current_value());
+        assert_eq!(cloned.next(), "100");
+    }
+
+    #[test]
+    fn test_handle_sequential_1000() {
+        let mut gen = HandleGenerator::new();
+        let mut prev = 0u32;
+        for i in 0..1000 {
+            let h = gen.next();
+            let val = u32::from_str_radix(&h, 16).unwrap();
+            if i > 0 {
+                assert_eq!(val, prev + 1);
+            }
+            prev = val;
+        }
+    }
+
+    #[test]
+    fn test_handle_hex_format_no_prefix() {
+        let mut gen = HandleGenerator::new();
+        let h = gen.next();
+        assert!(!h.starts_with("0x"));
+        assert!(!h.starts_with("0X"));
+    }
+
+    #[test]
+    fn test_owners_constants() {
+        assert_eq!(owners::MODEL_SPACE, "1F");
+        assert_eq!(owners::ENTITIES, "36");
     }
 }

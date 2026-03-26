@@ -253,4 +253,196 @@ mod tests {
         assert!(layers.contains(&"タイトル".to_string()));
         assert_eq!(layers.len(), 4);
     }
+
+    // ================================================================
+    // Edge cases & boundary values
+    // ================================================================
+
+    #[test]
+    fn test_from_document_empty() {
+        let doc = DxfDocument::default();
+        let index = DxfIndex::from_document(&doc);
+        assert!(index.get_station_coord("anything").is_none());
+        assert!(index.lines_on_layer("any").is_empty());
+        assert!(index.texts_on_layer("any").is_empty());
+        assert!(index.layers().is_empty());
+    }
+
+    #[test]
+    fn test_get_station_coord_empty_name() {
+        let doc = DxfDocument {
+            texts: vec![DxfText::new(10.0, 20.0, "")],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        let coord = index.get_station_coord("").unwrap();
+        assert!((coord.0 - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_get_station_coord_first_match_wins() {
+        let doc = DxfDocument {
+            texts: vec![
+                DxfText::new(100.0, 200.0, "No.0"),
+                DxfText::new(300.0, 400.0, "No.0"), // duplicate
+            ],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        let coord = index.get_station_coord("No.0").unwrap();
+        // Should return first match
+        assert!((coord.0 - 100.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_lines_on_layer_case_insensitive() {
+        let doc = DxfDocument {
+            lines: vec![
+                DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "CenterLine"),
+                DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "centerline"),
+                DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "CENTERLINE"),
+            ],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        let matches = index.lines_on_layer("center");
+        assert_eq!(matches.len(), 3);
+    }
+
+    #[test]
+    fn test_lines_on_layer_partial_match() {
+        let doc = DxfDocument {
+            lines: vec![
+                DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "道路中心線"),
+            ],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        // Partial match should work
+        assert_eq!(index.lines_on_layer("中心").len(), 1);
+        assert_eq!(index.lines_on_layer("道路").len(), 1);
+        assert_eq!(index.lines_on_layer("線").len(), 1);
+    }
+
+    #[test]
+    fn test_texts_on_layer_empty_layer() {
+        let doc = DxfDocument {
+            texts: vec![DxfText::new(0.0, 0.0, "test").layer("")],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        // Empty pattern matches everything (empty string is contained in any string)
+        let matches = index.texts_on_layer("");
+        assert_eq!(matches.len(), 1);
+    }
+
+    #[test]
+    fn test_bounding_box_single_line() {
+        let doc = DxfDocument {
+            lines: vec![DxfLine::new(10.0, 20.0, 30.0, 40.0)],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        let bb = index.bounding_box().unwrap();
+        assert!((bb.min_x - 10.0).abs() < 0.001);
+        assert!((bb.min_y - 20.0).abs() < 0.001);
+        assert!((bb.max_x - 30.0).abs() < 0.001);
+        assert!((bb.max_y - 40.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_bounding_box_texts_only() {
+        let doc = DxfDocument {
+            texts: vec![
+                DxfText::new(-10.0, -20.0, "A"),
+                DxfText::new(100.0, 200.0, "B"),
+            ],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        let bb = index.bounding_box().unwrap();
+        assert!((bb.min_x - (-10.0)).abs() < 0.001);
+        assert!((bb.min_y - (-20.0)).abs() < 0.001);
+        assert!((bb.max_x - 100.0).abs() < 0.001);
+        assert!((bb.max_y - 200.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_bounding_box_negative_coords() {
+        let doc = DxfDocument {
+            lines: vec![DxfLine::new(-100.0, -200.0, -50.0, -25.0)],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        let bb = index.bounding_box().unwrap();
+        assert!((bb.min_x - (-100.0)).abs() < 0.001);
+        assert!((bb.max_y - (-25.0)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_bounding_box_point_line() {
+        let doc = DxfDocument {
+            lines: vec![DxfLine::new(5.0, 5.0, 5.0, 5.0)],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        let bb = index.bounding_box().unwrap();
+        assert!((bb.min_x - bb.max_x).abs() < 0.001);
+        assert!((bb.min_y - bb.max_y).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_layers_single_layer() {
+        let doc = DxfDocument {
+            lines: vec![
+                DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "Layer1"),
+                DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "Layer1"),
+            ],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        let layers = index.layers();
+        assert_eq!(layers.len(), 1);
+        assert_eq!(layers[0], "Layer1");
+    }
+
+    #[test]
+    fn test_layers_sorted() {
+        let doc = DxfDocument {
+            lines: vec![
+                DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "Z"),
+                DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "A"),
+                DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "M"),
+            ],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        let layers = index.layers();
+        assert_eq!(layers, vec!["A", "M", "Z"]);
+    }
+
+    #[test]
+    fn test_layers_from_lines_and_texts() {
+        let doc = DxfDocument {
+            lines: vec![DxfLine::with_style(0.0, 0.0, 1.0, 1.0, 7, "LineLayer")],
+            texts: vec![DxfText::new(0.0, 0.0, "t").layer("TextLayer")],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        let layers = index.layers();
+        assert_eq!(layers.len(), 2);
+        assert!(layers.contains(&"LineLayer".to_string()));
+        assert!(layers.contains(&"TextLayer".to_string()));
+    }
+
+    #[test]
+    fn test_layers_default_layer_zero() {
+        let doc = DxfDocument {
+            lines: vec![DxfLine::new(0.0, 0.0, 1.0, 1.0)],
+            ..Default::default()
+        };
+        let index = DxfIndex::from_document(&doc);
+        let layers = index.layers();
+        assert_eq!(layers, vec!["0"]);
+    }
 }

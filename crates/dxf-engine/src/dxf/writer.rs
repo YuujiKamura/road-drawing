@@ -497,4 +497,193 @@ mod tests {
         let output3 = writer.write_all(&lines, &[], &[], &[]);
         assert!(output3.contains("5\n100"));
     }
+
+    // ================================================================
+    // Boundary values & edge cases
+    // ================================================================
+
+    #[test]
+    fn test_write_all_empty() {
+        let mut writer = DxfWriter::new();
+        let output = writer.write_all(&[], &[], &[], &[]);
+        assert!(output.contains("ENTITIES"));
+        assert!(output.contains("ENDSEC"));
+        assert!(output.contains("EOF"));
+        assert!(!output.contains("LINE"));
+        assert!(!output.contains("TEXT"));
+    }
+
+    #[test]
+    fn test_write_line_negative_coords() {
+        let writer = DxfWriter::new();
+        let lines = vec![DxfLine::new(-100.0, -200.0, -300.0, -400.0)];
+        let output = writer.write(&lines, &[]);
+        assert!(output.contains("10\n-100"));
+        assert!(output.contains("20\n-200"));
+        assert!(output.contains("11\n-300"));
+        assert!(output.contains("21\n-400"));
+    }
+
+    #[test]
+    fn test_write_line_zero_coords() {
+        let writer = DxfWriter::new();
+        let lines = vec![DxfLine::new(0.0, 0.0, 0.0, 0.0)];
+        let output = writer.write(&lines, &[]);
+        assert!(output.contains("LINE"));
+    }
+
+    #[test]
+    fn test_write_text_empty_content() {
+        let writer = DxfWriter::new();
+        let texts = vec![DxfText::new(0.0, 0.0, "")];
+        let output = writer.write(&[], &texts);
+        assert!(output.contains("TEXT"));
+        assert!(output.contains("1\n"));
+    }
+
+    #[test]
+    fn test_write_text_japanese_content() {
+        let writer = DxfWriter::new();
+        let texts = vec![DxfText::new(0.0, 0.0, "横断歩道")];
+        let output = writer.write(&[], &texts);
+        assert!(output.contains("1\n横断歩道"));
+    }
+
+    #[test]
+    fn test_write_text_negative_rotation() {
+        let writer = DxfWriter::new();
+        let texts = vec![DxfText::new(0.0, 0.0, "R").rotation(-90.0)];
+        let output = writer.write(&[], &texts);
+        assert!(output.contains("50\n-90"));
+    }
+
+    #[test]
+    fn test_write_text_all_alignment_combos() {
+        let writer = DxfWriter::new();
+        let texts = vec![
+            DxfText::new(0.0, 0.0, "TL").align_h(HorizontalAlignment::Left).align_v(VerticalAlignment::Top),
+            DxfText::new(0.0, 0.0, "CR").align_h(HorizontalAlignment::Center).align_v(VerticalAlignment::Middle),
+            DxfText::new(0.0, 0.0, "RB").align_h(HorizontalAlignment::Right).align_v(VerticalAlignment::Bottom),
+        ];
+        let output = writer.write(&[], &texts);
+        assert_eq!(output.matches("0\nTEXT\n").count(), 3);
+        // Non-default alignments should have second point (11/21)
+        assert!(output.contains("72\n0")); // Left
+        assert!(output.contains("72\n1")); // Center
+        assert!(output.contains("72\n2")); // Right
+    }
+
+    #[test]
+    fn test_write_circle_zero_radius() {
+        let mut writer = DxfWriter::new();
+        let circles = vec![DxfCircle::new(0.0, 0.0, 0.0)];
+        let output = writer.write_all(&[], &[], &circles, &[]);
+        assert!(output.contains("CIRCLE"));
+        assert!(output.contains("40\n0"));
+    }
+
+    #[test]
+    fn test_write_lwpolyline_single_vertex() {
+        let mut writer = DxfWriter::new();
+        let polylines = vec![DxfLwPolyline::new(vec![(5.0, 5.0)])];
+        let output = writer.write_all(&[], &[], &[], &polylines);
+        assert!(output.contains("LWPOLYLINE"));
+        assert!(output.contains("90\n1"));
+    }
+
+    #[test]
+    fn test_write_lwpolyline_many_vertices() {
+        let mut writer = DxfWriter::new();
+        let verts: Vec<(f64, f64)> = (0..100).map(|i| (i as f64, i as f64 * 2.0)).collect();
+        let polylines = vec![DxfLwPolyline::new(verts)];
+        let output = writer.write_all(&[], &[], &[], &polylines);
+        assert!(output.contains("90\n100"));
+    }
+
+    #[test]
+    fn test_write_many_entities_handles_unique() {
+        let mut writer = DxfWriter::new();
+        let lines: Vec<DxfLine> = (0..50).map(|i| DxfLine::new(i as f64, 0.0, i as f64 + 1.0, 0.0)).collect();
+        let output = writer.write_all(&lines, &[], &[], &[]);
+        // Extract entity handles: group code 5 that follows an entity type marker
+        // Each entity's handle starts with "1" (0x100+)
+        let all_lines: Vec<&str> = output.lines().collect();
+        let mut handles = Vec::new();
+        let mut i = 0;
+        while i + 1 < all_lines.len() {
+            if all_lines[i].trim() == "5" {
+                let val = all_lines[i + 1].trim();
+                if val.starts_with("1") {
+                    handles.push(val);
+                }
+            }
+            i += 1;
+        }
+        let unique: std::collections::HashSet<&&str> = handles.iter().collect();
+        assert_eq!(unique.len(), 50);
+    }
+
+    #[test]
+    fn test_write_output_lint_valid() {
+        use crate::dxf::linter::DxfLinter;
+
+        let mut writer = DxfWriter::new();
+        let lines = vec![DxfLine::new(0.0, 0.0, 10.0, 10.0)];
+        let texts = vec![DxfText::new(5.0, 5.0, "Test")];
+        let circles = vec![DxfCircle::new(20.0, 20.0, 5.0)];
+        let polylines = vec![DxfLwPolyline::closed(vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)])];
+        let output = writer.write_all(&lines, &texts, &circles, &polylines);
+        assert!(DxfLinter::is_valid(&output), "Writer output failed lint validation");
+    }
+
+    #[test]
+    fn test_write_legacy_api_lint_valid() {
+        use crate::dxf::linter::DxfLinter;
+
+        let writer = DxfWriter::new();
+        let lines = vec![
+            DxfLine::with_style(0.0, 0.0, 100.0, 0.0, 5, "中心線"),
+            DxfLine::with_style(0.0, 0.0, 0.0, 100.0, 3, "横断歩道"),
+        ];
+        let texts = vec![
+            DxfText::new(50.0, 50.0, "No.0").height(250.0).rotation(-90.0).color(5),
+        ];
+        let output = writer.write(&lines, &texts);
+        assert!(DxfLinter::is_valid(&output), "Legacy writer output failed lint validation");
+    }
+
+    #[test]
+    fn test_write_section_structure() {
+        let writer = DxfWriter::new();
+        let output = writer.write(&[], &[]);
+        // Must have HEADER section then ENTITIES section
+        let header_pos = output.find("2\nHEADER").unwrap();
+        let entities_pos = output.find("2\nENTITIES").unwrap();
+        assert!(header_pos < entities_pos);
+    }
+
+    #[test]
+    fn test_write_eof_at_end() {
+        let writer = DxfWriter::new();
+        let output = writer.write(&[], &[]);
+        let trimmed = output.trim_end();
+        assert!(trimmed.ends_with("EOF"));
+    }
+
+    #[test]
+    fn test_write_line_z_always_zero() {
+        let writer = DxfWriter::new();
+        let lines = vec![DxfLine::new(1.0, 2.0, 3.0, 4.0)];
+        let output = writer.write(&lines, &[]);
+        assert!(output.contains("30\n0"));
+        assert!(output.contains("31\n0"));
+    }
+
+    #[test]
+    fn test_write_lwpolyline_constant_width() {
+        let mut writer = DxfWriter::new();
+        let polylines = vec![DxfLwPolyline::new(vec![(0.0, 0.0), (10.0, 10.0)])];
+        let output = writer.write_all(&[], &[], &[], &polylines);
+        assert!(output.contains("43\n0")); // Constant width = 0
+    }
 }

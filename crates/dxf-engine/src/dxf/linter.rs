@@ -379,4 +379,177 @@ mod tests {
         let result = DxfLinter::lint(&output);
         assert!(result.is_ok(), "Writer output failed lint: {:?}", result.errors);
     }
+
+    // ================================================================
+    // Edge cases & boundary values
+    // ================================================================
+
+    #[test]
+    fn test_is_valid_valid_dxf() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n";
+        assert!(DxfLinter::is_valid(dxf));
+    }
+
+    #[test]
+    fn test_is_valid_empty() {
+        assert!(!DxfLinter::is_valid(""));
+    }
+
+    #[test]
+    fn test_lint_only_eof() {
+        let dxf = "0\nEOF\n";
+        let result = DxfLinter::lint(dxf);
+        // Valid (no unclosed sections, has EOF)
+        assert!(result.is_ok(), "Errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn test_lint_multiple_sections() {
+        let dxf = "\
+0\nSECTION\n2\nHEADER\n0\nENDSEC\n\
+0\nSECTION\n2\nTABLES\n0\nENDSEC\n\
+0\nSECTION\n2\nENTITIES\n0\nENDSEC\n\
+0\nEOF\n";
+        let result = DxfLinter::lint(dxf);
+        assert!(result.is_ok(), "Errors: {:?}", result.errors);
+        assert_eq!(result.stats.sections.len(), 3);
+        assert_eq!(result.stats.sections, vec!["HEADER", "TABLES", "ENTITIES"]);
+    }
+
+    #[test]
+    fn test_lint_nested_section_error() {
+        // Two SECTIONs without closing first
+        let dxf = "0\nSECTION\n2\nHEADER\n0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nENDSEC\n0\nEOF\n";
+        let result = DxfLinter::lint(dxf);
+        // The second SECTION opens inside first — first gets closed by first ENDSEC,
+        // second ENDSEC closes the second. Actually this depends on stack behavior.
+        // Either way, sections count = 2
+        assert_eq!(result.stats.sections.len(), 2);
+    }
+
+    #[test]
+    fn test_lint_multiple_errors_at_once() {
+        // Missing EOF + broken chunk + unclosed section
+        let dxf = "0\nSECTION\n2\nHEADER\n0\n"; // 5 lines = odd + no EOF + unclosed
+        let result = DxfLinter::lint(dxf);
+        assert!(result.has_errors());
+        let codes: Vec<LintErrorCode> = result.errors.iter().map(|e| e.code).collect();
+        assert!(codes.contains(&LintErrorCode::BrokenChunk));
+        assert!(codes.contains(&LintErrorCode::MissingEof));
+        assert!(codes.contains(&LintErrorCode::UnclosedSection));
+    }
+
+    #[test]
+    fn test_lint_line_count() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n";
+        let result = DxfLinter::lint(dxf);
+        assert_eq!(result.stats.line_count, 8);
+    }
+
+    #[test]
+    fn test_lint_entity_count_zero() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n";
+        let result = DxfLinter::lint(dxf);
+        assert_eq!(result.stats.entity_count, 0);
+    }
+
+    #[test]
+    fn test_lint_handle_count_zero() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n";
+        let result = DxfLinter::lint(dxf);
+        assert_eq!(result.stats.handle_count, 0);
+    }
+
+    #[test]
+    fn test_lint_content_after_eof_with_entity() {
+        let dxf = "0\nEOF\n0\nLINE\n5\n100\n";
+        let result = DxfLinter::lint(dxf);
+        assert!(result.errors.iter().any(|e| e.code == LintErrorCode::ContentAfterEof));
+    }
+
+    #[test]
+    fn test_lint_multiple_endsec_without_section() {
+        let dxf = "0\nENDSEC\n0\nENDSEC\n0\nEOF\n";
+        let result = DxfLinter::lint(dxf);
+        let unmatched_count = result.errors.iter()
+            .filter(|e| e.code == LintErrorCode::UnmatchedEndsec)
+            .count();
+        assert_eq!(unmatched_count, 2);
+    }
+
+    #[test]
+    fn test_lint_invalid_group_code_non_numeric() {
+        let dxf = "hello\nworld\n0\nEOF\n";
+        let result = DxfLinter::lint(dxf);
+        assert!(result.errors.iter().any(|e| e.code == LintErrorCode::InvalidGroupCode));
+    }
+
+    #[test]
+    fn test_lint_whitespace_tolerance() {
+        let dxf = " 0 \n SECTION \n 2 \n ENTITIES \n 0 \n ENDSEC \n 0 \n EOF \n";
+        let result = DxfLinter::lint(dxf);
+        assert!(result.is_ok(), "Errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn test_lint_writer_all_entity_types() {
+        use crate::dxf::entities::*;
+        use crate::dxf::writer::DxfWriter;
+
+        let mut writer = DxfWriter::new();
+        let lines = vec![DxfLine::new(0.0, 0.0, 10.0, 10.0)];
+        let texts = vec![DxfText::new(5.0, 5.0, "Test")];
+        let circles = vec![DxfCircle::new(20.0, 20.0, 5.0)];
+        let polylines = vec![DxfLwPolyline::closed(vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)])];
+        let output = writer.write_all(&lines, &texts, &circles, &polylines);
+
+        let result = DxfLinter::lint(&output);
+        assert!(result.is_ok(), "Errors: {:?}", result.errors);
+        assert_eq!(result.stats.entity_count, 4);
+        assert_eq!(result.stats.handle_count, 4);
+    }
+
+    #[test]
+    fn test_lint_error_display() {
+        let err = LintError {
+            line: 5,
+            code: LintErrorCode::DuplicateHandle,
+            message: "Duplicate handle: 100".to_string(),
+        };
+        assert_eq!(err.message, "Duplicate handle: 100");
+        assert_eq!(err.line, 5);
+    }
+
+    #[test]
+    fn test_lint_result_is_ok_no_errors() {
+        let result = LintResult {
+            errors: vec![],
+            warnings: vec![],
+            stats: LintStats::default(),
+        };
+        assert!(result.is_ok());
+        assert!(!result.has_errors());
+    }
+
+    #[test]
+    fn test_lint_result_has_errors_with_errors() {
+        let result = LintResult {
+            errors: vec![LintError {
+                line: 1,
+                code: LintErrorCode::EmptyContent,
+                message: "test".to_string(),
+            }],
+            warnings: vec![],
+            stats: LintStats::default(),
+        };
+        assert!(!result.is_ok());
+        assert!(result.has_errors());
+    }
+
+    #[test]
+    fn test_lint_single_line_dxf() {
+        // Just one line — broken chunk + no EOF
+        let result = DxfLinter::lint("0\n");
+        assert!(result.has_errors());
+    }
 }
