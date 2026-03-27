@@ -108,8 +108,17 @@ pub fn start() -> Result<(), JsValue> {
                 Box::new(|cc| Ok(Box::new(RoadDrawingApp::new(cc)))),
             )
             .await;
-        if let Err(e) = start_result {
-            log::error!("Failed to start eframe: {e:?}");
+        match &start_result {
+            Ok(_) => {
+                // Hide loading spinner
+                if let Some(el) = document.get_element_by_id("loading") {
+                    let _ = el.class_list().add_1("hidden");
+                }
+                log::info!("eframe started successfully");
+            }
+            Err(e) => {
+                log::error!("Failed to start eframe: {e:?}");
+            }
         }
     });
 
