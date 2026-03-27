@@ -1,6 +1,6 @@
 //! DXF hot-swap viewer binary.
 //!
-//! Usage: cargo run --bin dxf-viewer -- <path-to-dxf-file>
+//! Usage: cargo run -p dxf-viewer -- <path-to-dxf-file>
 //!
 //! Watches the DXF file for changes and auto-reloads the view.
 
@@ -20,7 +20,13 @@ fn main() -> eframe::Result {
     }
 
     let dxf_path_clone = dxf_path.clone();
-    let title = format!("DXF Viewer - {}", dxf_path.file_name().unwrap_or_default().to_string_lossy());
+    let title = format!(
+        "DXF Viewer - {}",
+        dxf_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+    );
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -32,6 +38,11 @@ fn main() -> eframe::Result {
     eframe::run_native(
         &title,
         options,
-        Box::new(move |cc| Ok(Box::new(road_drawing_web::DxfViewerApp::new(cc, dxf_path_clone)))),
+        Box::new(move |cc| {
+            Ok(Box::new(road_drawing_web::DxfViewerApp::new(
+                cc,
+                dxf_path_clone,
+            )))
+        }),
     )
 }
