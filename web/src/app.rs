@@ -49,8 +49,11 @@ impl RoadDrawingApp {
                     Ok(stations) => {
                         self.status = format!("{}を読み込みました（{}測点）", name, stations.len());
                         self.stations = stations;
-                        self.csv_content = Some(text);
+                        self.csv_content = Some(text.clone());
                         self.file_name = Some(name);
+                        // Sync dropped CSV to Tabulator grid
+                        #[cfg(target_arch = "wasm32")]
+                        crate::push_csv_to_js_grid(&text);
                     }
                     Err(e) => {
                         self.status = format!("パースエラー: {e}");
@@ -171,12 +174,23 @@ impl eframe::App for RoadDrawingApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_dropped_files(ctx);
 
-        CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Road Drawing");
-            ui.label(RichText::new(&self.status).size(14.0));
-            ui.add_space(8.0);
+        // Poll JS bridge for grid edits (Tabulator → CSV → WASM)
+        #[cfg(target_arch = "wasm32")]
+        if let Some(csv) = crate::take_pending_csv() {
+            let rows = crate::grid_data::csv_to_grid(&csv);
+            let stations = crate::grid_data::grid_to_stations(&rows);
+            if !stations.is_empty() {
+                self.status = format!("Grid: {}測点", stations.len());
+                self.stations = stations;
+                self.csv_content = Some(csv);
+            }
+        }
 
+        CentralPanel::default().show(ctx, |ui| {
             if self.stations.is_empty() {
+                ui.heading("Road Drawing");
+                ui.label(RichText::new(&self.status).size(14.0));
+                ui.add_space(8.0);
                 ui.vertical_centered(|ui| {
                     ui.add_space(40.0);
                     self.draw_drop_zone(ui);
