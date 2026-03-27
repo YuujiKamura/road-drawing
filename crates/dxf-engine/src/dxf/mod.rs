@@ -22,6 +22,7 @@
 //! assert!(dxf_content.contains("TEXT"));
 //! ```
 
+pub mod comparator;
 pub mod entities;
 pub mod handle;
 pub mod index;
