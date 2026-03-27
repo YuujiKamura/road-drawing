@@ -53,6 +53,21 @@ pub fn to_cumulative_rows(rows: &mut [crate::RawRow]) {
     }
 }
 
+/// Convert cumulative distances back to span (single-segment) distances.
+///
+/// Inverse of cumsum: span[0] = cumulative[0], span[i] = cumulative[i] - cumulative[i-1].
+pub fn to_span(cumulative: &[f64]) -> Vec<f64> {
+    if cumulative.is_empty() {
+        return vec![];
+    }
+    let mut result = Vec::with_capacity(cumulative.len());
+    result.push(cumulative[0]);
+    for i in 1..cumulative.len() {
+        result.push(cumulative[i] - cumulative[i - 1]);
+    }
+    result
+}
+
 fn median(values: &[f64]) -> f64 {
     let mut sorted = values.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -222,5 +237,60 @@ mod tests {
         let vals = vec![0.0, 2.0, 5.0, 9.0, 14.0];
         // diffs: 2, 3, 4, 5 → sorted: 2, 3, 4, 5 → median = (3+4)/2 = 3.5 < 16
         assert!(is_cumulative(&vals));
+    }
+
+    // ================================================================
+    // to_span: cumulative → span (inverse conversion)
+    // ================================================================
+
+    #[test]
+    fn test_to_span_basic() {
+        let cumulative = vec![0.0, 10.0, 30.0, 40.0, 55.0];
+        let span = to_span(&cumulative);
+        assert!((span[0] - 0.0).abs() < 0.001);
+        assert!((span[1] - 10.0).abs() < 0.001);
+        assert!((span[2] - 20.0).abs() < 0.001);
+        assert!((span[3] - 10.0).abs() < 0.001);
+        assert!((span[4] - 15.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_to_span_empty() {
+        assert!(to_span(&[]).is_empty());
+    }
+
+    #[test]
+    fn test_to_span_single() {
+        let span = to_span(&[5.0]);
+        assert_eq!(span.len(), 1);
+        assert!((span[0] - 5.0).abs() < 0.001);
+    }
+
+    // ================================================================
+    // Roundtrip: span → cumulative → span
+    // ================================================================
+
+    #[test]
+    fn test_roundtrip_span_cumulative_span() {
+        let original_span = vec![0.0, 1.15, 2.1, 2.15, 1.6];
+        let cumulative = to_cumulative(&original_span);
+        // cumulative: 0, 1.15, 3.25, 5.40, 7.00
+        let recovered_span = to_span(&cumulative);
+        for (i, (&orig, &recov)) in original_span.iter().zip(recovered_span.iter()).enumerate() {
+            assert!((orig - recov).abs() < 1e-9,
+                "Roundtrip mismatch at [{}]: orig={}, recovered={}", i, orig, recov);
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_cumulative_span_cumulative() {
+        let original_cum = vec![0.0, 1.15, 3.25, 5.40, 7.00];
+        let span = to_span(&original_cum);
+        let recovered_cum = to_cumulative(&span);
+        // to_cumulative sees < 4 values or non-monotonic span → does cumsum
+        for (i, (&orig, &recov)) in original_cum.iter().zip(recovered_cum.iter()).enumerate() {
+            assert!((orig - recov).abs() < 1e-9,
+                "Roundtrip mismatch at [{}]: orig={}, recovered={}", i, orig, recov);
+        }
     }
 }
