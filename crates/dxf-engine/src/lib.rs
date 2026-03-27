@@ -37,3 +37,4 @@ pub use dxf::linter::{DxfLinter, LintResult, LintError, LintErrorCode};
 pub use dxf::reader::{DxfDocument, ReaderError, parse_dxf};
 pub use dxf::index::{DxfIndex, BoundingBox};
 pub use dxf::writer::DxfWriter;
+pub use dxf::comparator::{DxfComparable, compare_dxf_strings};

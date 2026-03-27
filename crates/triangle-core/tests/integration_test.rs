@@ -1,21 +1,22 @@
 //! Integration tests: real CSV files → parse → build → verify
 //!
-//! Reads test fixtures from the original Kotlin trianglelist project:
-//!   ~/StudioProjects/trianglelist/app/src/test/resources/
+//! Reads test fixtures from tests/fixtures/triangle/ (self-contained in repo)
+
+use std::path::Path;
 
 use triangle_core::connection::{build_connected_list, verify_connection};
 use triangle_core::csv_loader::parse_csv;
 
-/// Path to Kotlin project test resources
-const RESOURCE_DIR: &str = concat!(
-    env!("USERPROFILE"),
-    r"\StudioProjects\trianglelist\app\src\test\resources"
-);
-
 fn read_fixture(name: &str) -> String {
-    let path = format!(r"{}\{}", RESOURCE_DIR, name);
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent().unwrap()
+        .parent().unwrap()
+        .join("tests")
+        .join("fixtures")
+        .join("triangle")
+        .join(name);
     std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e))
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e))
 }
 
 // ================================================================

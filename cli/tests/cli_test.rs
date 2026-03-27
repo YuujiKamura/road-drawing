@@ -17,12 +17,13 @@ fn bin_path() -> PathBuf {
     path
 }
 
-/// Real CSV fixture path (from csv_to_dxf project)
+/// Fixture directory (self-contained in repo)
 fn fixture_dir() -> PathBuf {
-    PathBuf::from(env!("HOMEPATH"))
-        .join("StudioProjects")
-        .join("csv_to_dxf")
-        .join("data")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent().unwrap()
+        .join("tests")
+        .join("fixtures")
+        .join("road-section")
 }
 
 fn skip_if_no_fixtures() -> bool {
@@ -44,7 +45,7 @@ fn test_marking_cli_list_sections_multi() {
         return;
     }
 
-    let csv_path = fixture_dir().join("面積計算書、塩塚小野線側溝改修工事 - シート1.csv");
+    let csv_path = fixture_dir().join("multi_section.csv");
     if !csv_path.exists() {
         eprintln!("SKIP: multi-section CSV not found");
         return;
@@ -322,7 +323,7 @@ fn test_cli_section_flag_generates_dxf() {
         return;
     }
 
-    let csv_path = fixture_dir().join("面積計算書、塩塚小野線側溝改修工事 - シート1.csv");
+    let csv_path = fixture_dir().join("multi_section.csv");
     if !csv_path.exists() {
         eprintln!("SKIP: multi-section CSV not found");
         return;
@@ -415,15 +416,13 @@ fn test_cli_section_flag_single_csv() {
 // --type triangle: real connected.csv from trianglelist test resources
 // ================================================================
 
-/// Trianglelist test resources path
+/// Triangle fixture directory (self-contained in repo)
 fn trianglelist_fixture_dir() -> PathBuf {
-    PathBuf::from(env!("HOMEPATH"))
-        .join("StudioProjects")
-        .join("trianglelist")
-        .join("app")
-        .join("src")
-        .join("test")
-        .join("resources")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent().unwrap()
+        .join("tests")
+        .join("fixtures")
+        .join("triangle")
 }
 
 #[test]

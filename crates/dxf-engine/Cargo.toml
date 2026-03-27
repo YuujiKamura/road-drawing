@@ -16,3 +16,6 @@ name = "dxf_engine"
 path = "src/lib.rs"
 
 [dependencies]
+
+[dev-dependencies]
+road-section = { path = "../road-section" }
