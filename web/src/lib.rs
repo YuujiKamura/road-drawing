@@ -4,9 +4,13 @@
 
 mod app;
 pub mod dxf_export;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod dxf_viewer;
 pub mod renderer;
 
 pub use app::RoadDrawingApp;
+#[cfg(not(target_arch = "wasm32"))]
+pub use dxf_viewer::DxfViewerApp;
 
 // WASM entry point
 #[cfg(target_arch = "wasm32")]
