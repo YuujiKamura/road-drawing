@@ -313,6 +313,105 @@ zumennum,1
 }
 
 // ================================================================
+// --section: generate DXF from multi-section CSV with section selection
+// ================================================================
+
+#[test]
+fn test_cli_section_flag_generates_dxf() {
+    if skip_if_no_fixtures() {
+        return;
+    }
+
+    let csv_path = fixture_dir().join("面積計算書、塩塚小野線側溝改修工事 - シート1.csv");
+    if !csv_path.exists() {
+        eprintln!("SKIP: multi-section CSV not found");
+        return;
+    }
+
+    let tmp_dir = std::env::temp_dir();
+    let output_path = tmp_dir.join("test_cli_section_flag.dxf");
+
+    let output = Command::new(bin_path())
+        .args([
+            "generate",
+            "--input",
+            csv_path.to_str().unwrap(),
+            "--output",
+            output_path.to_str().unwrap(),
+            "--section",
+            "区間3",
+        ])
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert!(
+        output.status.success(),
+        "CLI --section 区間3 should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(output_path.exists(), "Output DXF file should be created");
+
+    let dxf_content = fs::read_to_string(&output_path).unwrap();
+    assert!(dxf_content.contains("LINE"), "DXF should have LINE entities");
+    assert!(
+        dxf_engine::DxfLinter::is_valid(&dxf_content),
+        "Generated DXF must pass linter"
+    );
+
+    // stderr should mention section name
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("区間3"),
+        "stderr should mention section name: {}",
+        stderr
+    );
+
+    fs::remove_file(&output_path).ok();
+}
+
+#[test]
+fn test_cli_section_flag_single_csv() {
+    if skip_if_no_fixtures() {
+        return;
+    }
+
+    let csv_path = fixture_dir().join("区間1.csv");
+    if !csv_path.exists() {
+        eprintln!("SKIP: 区間1.csv not found");
+        return;
+    }
+
+    let tmp_dir = std::env::temp_dir();
+    let output_path = tmp_dir.join("test_cli_section_single.dxf");
+
+    let output = Command::new(bin_path())
+        .args([
+            "generate",
+            "--input",
+            csv_path.to_str().unwrap(),
+            "--output",
+            output_path.to_str().unwrap(),
+            "--section",
+            "区間1",
+        ])
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert!(
+        output.status.success(),
+        "CLI --section 区間1 with single CSV should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(output_path.exists());
+    let dxf_content = fs::read_to_string(&output_path).unwrap();
+    assert!(dxf_engine::DxfLinter::is_valid(&dxf_content));
+
+    fs::remove_file(&output_path).ok();
+}
+
+// ================================================================
 // Unknown --type should fail
 // ================================================================
 
