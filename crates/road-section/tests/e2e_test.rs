@@ -483,3 +483,55 @@ No.2,40.0,2.50,2.50
     assert!((orig.x1 - read.x1).abs() < 0.01, "x1 precision lost");
     assert!((orig.y1 - read.y1).abs() < 0.01, "y1 precision lost");
 }
+
+// ================================================================
+// Benchmark: 1000 stations DXF generation under 100ms
+// ================================================================
+
+#[test]
+#[ignore] // Run with: cargo test -p road-section --test e2e_test -- --ignored
+fn test_marking_e2e_bench_1000_stations_under_100ms() {
+    let mut csv = "name,x,wl,wr\n".to_string();
+    for i in 0..1000 {
+        csv.push_str(&format!(
+            "No.{},{:.1},{:.2},{:.2}\n",
+            i,
+            i as f64 * 20.0,
+            2.5 + (i as f64 * 0.001),
+            3.0 - (i as f64 * 0.0005),
+        ));
+    }
+
+    let start = std::time::Instant::now();
+
+    let stations = parse_road_section_csv(&csv).unwrap();
+    assert_eq!(stations.len(), 1000);
+
+    let config = RoadSectionConfig::default();
+    let geometry = calculate_road_section(&stations, &config);
+    let (lines, texts) = geometry_to_dxf(&geometry);
+
+    let writer = DxfWriter::new();
+    let dxf_content = writer.write(&lines, &texts);
+
+    let elapsed = start.elapsed();
+
+    // Validate output
+    assert!(lines.len() > 3000, "1000 stations should produce many lines: {}", lines.len());
+    assert!(DxfLinter::is_valid(&dxf_content), "1000-station DXF must pass linter");
+
+    // Performance gate: full pipeline under 100ms
+    assert!(
+        elapsed.as_millis() < 100,
+        "1000-station pipeline took {}ms, should be under 100ms",
+        elapsed.as_millis()
+    );
+
+    eprintln!(
+        "BENCH: 1000 stations → {} lines, {} texts, {} bytes DXF in {}ms",
+        lines.len(),
+        texts.len(),
+        dxf_content.len(),
+        elapsed.as_millis()
+    );
+}
