@@ -1,41 +1,14 @@
-name: Deploy to GitHub Pages
+# Deprecated: Replaced by deploy.yml (Flutter Web + WASM)
+# This file is intentionally empty to avoid duplicate deployments.
+# See deploy.yml for the active GitHub Pages workflow.
+
+name: "[Deprecated] Pages (use deploy.yml)"
 
 on:
-  push:
-    branches: [master]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
+  workflow_dispatch: # Manual only, never auto-triggers
 
 jobs:
-  build:
+  notice:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - name: Install trunk
-        run: cargo install trunk
-      - name: Build
-        run: cd web && trunk build --release --public-url /road-drawing/
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: web/dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - run: echo "This workflow is deprecated. Use deploy.yml instead."
