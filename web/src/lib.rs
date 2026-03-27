@@ -19,6 +19,71 @@ use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast;
 
+/// Shared state for JS↔WASM bridge.
+/// Grid edits in Tabulator JS → CSV string → this cell → egui reads it.
+#[cfg(target_arch = "wasm32")]
+static CSV_CELL: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Called from JS when Tabulator grid is edited.
+/// Stores CSV text for egui to pick up on next frame.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn wasm_update_csv(csv: &str) {
+    if let Ok(mut cell) = CSV_CELL.lock() {
+        *cell = Some(csv.to_string());
+    }
+}
+
+/// Called from JS "DXF" button. Generates DXF and triggers browser download.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn wasm_download_dxf() {
+    let csv = match CSV_CELL.lock() {
+        Ok(cell) => cell.clone(),
+        Err(_) => None,
+    };
+    let Some(csv) = csv else { return };
+
+    let rows = grid_data::csv_to_grid(&csv);
+    let stations = grid_data::grid_to_stations(&rows);
+    if stations.is_empty() { return; }
+
+    let dxf_content = dxf_export::stations_to_dxf(&stations);
+
+    // Trigger browser download via Blob + <a> click
+    let window = web_sys::window().unwrap();
+    let document = window.document().unwrap();
+    let array = js_sys::Array::new();
+    array.push(&JsValue::from_str(&dxf_content));
+    let mut opts = web_sys::BlobPropertyBag::new();
+    opts.type_("application/dxf");
+    let blob = web_sys::Blob::new_with_str_sequence_and_options(&array, &opts).unwrap();
+    let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
+    let a: web_sys::HtmlAnchorElement = document
+        .create_element("a").unwrap()
+        .dyn_into().unwrap();
+    a.set_href(&url);
+    a.set_download("road_section.dxf");
+    a.click();
+    web_sys::Url::revoke_object_url(&url).ok();
+}
+
+/// Take pending CSV from JS bridge (returns None if no update).
+#[cfg(target_arch = "wasm32")]
+pub fn take_pending_csv() -> Option<String> {
+    CSV_CELL.lock().ok().and_then(|mut cell| cell.take())
+}
+
+/// Push CSV to JS grid (called when file is dropped on egui canvas).
+#[cfg(target_arch = "wasm32")]
+pub fn push_csv_to_js_grid(csv: &str) {
+    let window = web_sys::window().unwrap();
+    let _ = js_sys::Reflect::get(&window, &JsValue::from_str("js_load_csv_to_grid"))
+        .ok()
+        .and_then(|f| f.dyn_ref::<js_sys::Function>().cloned())
+        .map(|f| f.call1(&JsValue::NULL, &JsValue::from_str(csv)));
+}
+
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
 pub fn start() -> Result<(), JsValue> {
@@ -28,7 +93,6 @@ pub fn start() -> Result<(), JsValue> {
 
     let web_options = eframe::WebOptions::default();
     wasm_bindgen_futures::spawn_local(async {
-        // eframe 0.29 requires HtmlCanvasElement, not a string ID
         let document = web_sys::window().unwrap().document().unwrap();
         let canvas = document
             .get_element_by_id("road_drawing_canvas")
