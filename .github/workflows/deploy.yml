@@ -15,7 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  # ── Test (flutter-tester will add flutter test + cargo test steps) ──
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,23 +33,90 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: wasm-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: wasm-
+          key: cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-
 
-      - name: Install trunk
+      - name: Rust workspace tests
+        run: cargo test --all
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: WASM bridge tests (Rust native)
+        run: cargo test -p road-drawing-wasm
+
+      - name: Build WASM pkg for JS tests
+        working-directory: crates/road-drawing-wasm
+        run: wasm-pack build --target web --out-dir ./pkg --out-name road_drawing_wasm
+
+      - name: WASM bridge tests (JS interop)
+        run: node crates/road-drawing-wasm/tests/wasm_js_interop_test.mjs
+
+      - name: WASM bridge tests (Window Global pattern)
+        run: node crates/road-drawing-wasm/tests/window_global_pattern_test.mjs
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter tests (65 tests)
+        working-directory: flutter_web
+        run: flutter test
+
+  # ── Build & Deploy ──
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM (wasm-pack)
+        working-directory: crates/road-drawing-wasm
         run: |
-          TRUNK_VERSION="0.21.5"
-          wget -qO- "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
-            | tar xzf - -C /usr/local/bin
+          wasm-pack build --target web \
+            --out-dir ../../flutter_web/web/wasm \
+            --out-name road_drawing_wasm
 
-      - name: Build WASM (release)
-        working-directory: web
-        run: trunk build --release
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter build web
+        working-directory: flutter_web
+        run: flutter build web --base-href /road-drawing/
+
+      - name: Copy WASM to build output
+        run: |
+          mkdir -p flutter_web/build/web/wasm
+          cp flutter_web/web/wasm/road_drawing_wasm.js flutter_web/build/web/wasm/
+          cp flutter_web/web/wasm/road_drawing_wasm_bg.wasm flutter_web/build/web/wasm/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: web/dist
+          path: flutter_web/build/web
 
   deploy:
     needs: build
