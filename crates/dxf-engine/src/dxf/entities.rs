@@ -5,7 +5,7 @@
 //! - `DxfText`: TEXT entity with position, content, styling, and alignment
 
 /// Horizontal text alignment
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[repr(i32)]
 pub enum HorizontalAlignment {
     #[default]
@@ -15,7 +15,7 @@ pub enum HorizontalAlignment {
 }
 
 /// Vertical text alignment
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[repr(i32)]
 pub enum VerticalAlignment {
     #[default]

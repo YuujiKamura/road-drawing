@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use dxf_engine::{DxfLine, DxfText, DxfWriter};
+use dxf_engine::{DxfLine, DxfText, DxfWriter, compare_dxf_strings};
 use excel_parser::transform::{extract_and_transform, list_sections};
 use road_marking::command::{execute_command, parse_command, parse_command_list};
 use road_section::{
@@ -19,6 +19,17 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Verify DXF against golden file (Issue #7)
+    Verify {
+        /// Expected (golden) DXF file
+        #[arg(long)]
+        golden: PathBuf,
+
+        /// Actual (generated) DXF file
+        #[arg(long)]
+        actual: PathBuf,
+    },
+
     /// Generate DXF from input data
     Generate {
         /// Input file (CSV or Excel)
@@ -51,6 +62,22 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Verify { golden, actual } => {
+            let golden_content = fs::read_to_string(&golden)
+                .unwrap_or_else(|e| { eprintln!("Failed to read {}: {e}", golden.display()); std::process::exit(1); });
+            let actual_content = fs::read_to_string(&actual)
+                .unwrap_or_else(|e| { eprintln!("Failed to read {}: {e}", actual.display()); std::process::exit(1); });
+
+            match compare_dxf_strings(&golden_content, &actual_content) {
+                Ok(()) => {
+                    eprintln!("OK: DXF files match after normalization");
+                }
+                Err(diff) => {
+                    eprintln!("MISMATCH: {diff}");
+                    std::process::exit(1);
+                }
+            }
+        }
         Commands::Generate {
             input,
             output,

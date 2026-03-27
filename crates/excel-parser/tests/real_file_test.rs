@@ -1,19 +1,24 @@
-//! Integration test: read a real CSV file from the original csv_to_dxf project data.
+//! Integration test: read real CSV fixtures from tests/fixtures/.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use excel_parser::section_detector::extract_section_data_from_file;
 
+fn fixture_path(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent().unwrap()
+        .parent().unwrap()
+        .join("tests")
+        .join("fixtures")
+        .join("road-section")
+        .join(name)
+}
+
 #[test]
 fn test_marking_e2e_real_file_kukan1_csv() {
-    let path = Path::new(env!("HOMEPATH"))
-        .join("StudioProjects")
-        .join("csv_to_dxf")
-        .join("data")
-        .join("区間1.csv");
+    let path = fixture_path("区間1.csv");
 
     if !path.exists() {
-        // Skip on CI or machines without the test data
         eprintln!("SKIP: test data not found at {}", path.display());
         return;
     }
