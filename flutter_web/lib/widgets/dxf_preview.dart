@@ -104,10 +104,11 @@ class _DxfPainter extends CustomPainter {
 
     // Draw texts
     for (final t in data.texts) {
+      final fontSize = math.max(8.0, t.height * baseScale * 0.01);
       final textPainter = TextPainter(
         text: TextSpan(
           text: t.text,
-          style: TextStyle(color: _dxfColor(t.color), fontSize: math.max(8, t.height * baseScale * 0.003)),
+          style: TextStyle(color: _dxfColor(t.color), fontSize: fontSize),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
@@ -118,7 +119,8 @@ class _DxfPainter extends CustomPainter {
       if (t.rotation != 0) {
         canvas.rotate(-t.rotation * math.pi / 180); // DXF rotation is CCW
       }
-      textPainter.paint(canvas, Offset.zero);
+      // Center text at anchor point
+      textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height / 2));
       canvas.restore();
     }
   }

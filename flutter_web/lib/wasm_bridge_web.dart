@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
@@ -7,10 +8,17 @@ bool wasmIsInitialized = false;
 Future<void> wasmInit() async {
   if (wasmIsInitialized) return;
 
-  final initFn = _getGlobal('__wasmInit');
+  // Wait for index.html <script type="module"> to register window globals.
+  // Module scripts are deferred, so they may not have run yet when main() fires.
+  JSFunction? initFn;
+  for (var i = 0; i < 50; i++) {
+    initFn = _getGlobal('__wasmInit');
+    if (initFn != null) break;
+    await Future.delayed(const Duration(milliseconds: 100));
+  }
   if (initFn == null) {
     throw StateError(
-      'WASM init function not found. '
+      'WASM init function not found after 5s. '
       'Ensure index.html loads wasm/road_drawing_wasm.js',
     );
   }

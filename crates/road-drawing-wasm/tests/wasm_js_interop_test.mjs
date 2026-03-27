@@ -260,6 +260,45 @@ await test('rapid successive calls (simulating Flutter updates)', () => {
   }
 });
 
+// --- WASM init retry simulation (wasm_bridge_web.dart pattern) ---
+console.log('\n[WASM init retry pattern]');
+
+await test('retry loop finds function registered after delay', async () => {
+  // Simulate wasm_bridge_web.dart retry pattern:
+  // module script registers globals asynchronously, Dart retries until found
+  let fakeFnCalled = false;
+  const fakeFn = (csv) => { fakeFnCalled = true; return '[]'; };
+
+  // Register after 50ms delay (simulating module script load)
+  const key = '__wasm_retry_test_fn';
+  delete globalThis[key];
+  setTimeout(() => { globalThis[key] = fakeFn; }, 50);
+
+  // Retry loop
+  let fn = undefined;
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 20));
+    fn = globalThis[key];
+    if (fn !== undefined) break;
+  }
+  assert(fn !== undefined, 'should find function after retry');
+  fn('test');
+  assert(fakeFnCalled, 'function should be callable after retry');
+  delete globalThis[key];
+});
+
+await test('init function missing for full timeout returns undefined', async () => {
+  // Simulate: __wasm_nonexistent never appears
+  let fn = undefined;
+  const maxRetries = 5; // shortened for test speed
+  for (let i = 0; i < maxRetries; i++) {
+    fn = globalThis['__wasm_nonexistent_fn'];
+    if (fn !== undefined) break;
+    await new Promise(r => setTimeout(r, 10));
+  }
+  assertEq(fn, undefined, 'should remain undefined after timeout');
+});
+
 // --- Summary ---
 console.log('\n=====================');
 console.log(`Results: ${passed} passed, ${failed} failed, ${passed + failed} total`);

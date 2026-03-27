@@ -41,9 +41,12 @@ class _GridEditorState extends State<GridEditor> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      child: DataTable(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
         showCheckboxColumn: false,
-        columnSpacing: 16,
+        columnSpacing: 12,
+        horizontalMargin: 12,
         headingRowColor: WidgetStateProperty.all(const Color(0xFF2A2A3E)),
         columns: const [
           DataColumn(label: Text('測点名')),
@@ -65,6 +68,7 @@ class _GridEditorState extends State<GridEditor> {
             ],
           );
         }),
+      ),
       ),
     );
   }
