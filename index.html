@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Road Drawing Web</title>
+    <link rel="icon" href="data:,">
+    
+<script type="module">
+import init, * as bindings from '/road-drawing/road-drawing-web-a34c82edbc204932.js';
+const wasm = await init({ module_or_path: '/road-drawing/road-drawing-web-a34c82edbc204932_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+    <!-- Tabulator CSS + JS (CDN) -->
+    <link href="https://unpkg.com/tabulator-tables@6.3.1/dist/css/tabulator_midnight.min.css" rel="stylesheet">
+    <script type="text/javascript" src="https://unpkg.com/tabulator-tables@6.3.1/dist/js/tabulator.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100%; overflow: hidden;
+            background-color: #1a1a1a;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        #app-container { display: flex; width: 100%; height: 100%; }
+        #grid-panel {
+            width: 380px; min-width: 300px; height: 100%;
+            display: flex; flex-direction: column;
+            background-color: #1e1e2e; border-right: 1px solid #333;
+        }
+        #grid-toolbar {
+            padding: 8px 12px; display: flex; gap: 6px; flex-wrap: wrap;
+            align-items: center; border-bottom: 1px solid #333;
+        }
+        #grid-toolbar button {
+            padding: 4px 12px; border: 1px solid #555; border-radius: 4px;
+            background: #2a2a3e; color: #ccc; cursor: pointer; font-size: 13px;
+        }
+        #grid-toolbar button:hover { background: #3a3a5e; }
+        #grid-toolbar .title { color: #aaa; font-size: 13px; font-weight: bold; margin-right: auto; }
+        #grid-container { flex: 1; overflow: auto; }
+        #preview-panel { flex: 1; height: 100%; position: relative; overflow: hidden; }
+        /* eframe wraps canvas in a div — constrain both */
+        #preview-panel canvas,
+        #preview-panel > div {
+            position: absolute !important;
+            top: 0; left: 0;
+            width: 100% !important;
+            height: 100% !important;
+        }
+        #loading {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            background-color: #1a1a1a; color: #fff; z-index: 1000;
+            transition: opacity 0.3s ease-out;
+        }
+        #loading.hidden { opacity: 0; pointer-events: none; }
+        .spinner {
+            width: 40px; height: 40px; border: 3px solid #333; border-top-color: #4a9eff;
+            border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .tabulator { background-color: #1e1e2e; border: none; }
+        .tabulator .tabulator-header { background-color: #2a2a3e; border-bottom: 1px solid #444; }
+    </style>
+<link rel="modulepreload" href="/road-drawing/road-drawing-web-a34c82edbc204932.js" crossorigin="anonymous" integrity="sha384-sLV6SMW/y95aPZCZmYg/q+1aNKJWB5Uvx57ja+ziX8TBE3FcWAvRUMiz6JeZLUkC"><link rel="preload" href="/road-drawing/road-drawing-web-a34c82edbc204932_bg.wasm" crossorigin="anonymous" integrity="sha384-A79maY0zdhPeUagy7T4dVkxuIvEdhmT8nzX9jE5R93zawrc8Jf2HXms4DdloBoEL" as="fetch" type="application/wasm"></head>
+<body>
+    <div id="app-container">
+        <div id="grid-panel">
+            <div id="grid-toolbar">
+                <span class="title">Grid Editor</span>
+                <button id="btn-add-row">+ Row</button>
+                <button id="btn-del-row">- Row</button>
+                <button id="btn-preview">Preview</button>
+                <button id="btn-download">DXF</button>
+            </div>
+            <div id="grid-container"></div>
+        </div>
+        <div id="preview-panel">
+            <canvas id="road_drawing_canvas"></canvas>
+        </div>
+    </div>
+    <div id="loading">
+        <div class="spinner"></div>
+        <p>Loading Road Drawing...</p>
+    </div>
+    <script>
+    var gridTable = null, nextRowId = 1;
+
+    function initGrid() {
+        gridTable = new Tabulator("#grid-container", {
+            data: [
+                {id: nextRowId++, name:"No.0", x:0,  wl:3.45, wr:3.55},
+                {id: nextRowId++, name:"No.1", x:20, wl:3.50, wr:3.50},
+                {id: nextRowId++, name:"No.2", x:40, wl:3.55, wr:3.55},
+            ],
+            layout: "fitColumns", height: "100%", selectable: 1,
+            columns: [
+                {title:"測点名",  field:"name", editor:"input", width:90},
+                {title:"単延長L", field:"x",  editor:"number", hozAlign:"right",
+                 editorParams:{step:0.1}, formatter:"money", formatterParams:{precision:1,symbol:"",thousand:""}},
+                {title:"幅員W",   field:"wl", editor:"number", hozAlign:"right",
+                 editorParams:{step:0.01}, formatter:"money", formatterParams:{precision:2,symbol:"",thousand:""}},
+                {title:"幅員右",  field:"wr", editor:"number", hozAlign:"right",
+                 editorParams:{step:0.01}, formatter:"money", formatterParams:{precision:2,symbol:"",thousand:""}},
+            ],
+            cellEdited: function() { sendGridToWasm(); },
+        });
+
+        document.getElementById("btn-add-row").onclick = function() {
+            var rows = gridTable.getData();
+            var lastX = rows.length > 0 ? (rows[rows.length-1].x||0) : 0;
+            gridTable.addRow({id:nextRowId++, name:"No."+rows.length, x:lastX+20, wl:3.0, wr:3.0});
+            sendGridToWasm();
+        };
+        document.getElementById("btn-del-row").onclick = function() {
+            var sel = gridTable.getSelectedRows();
+            if (sel.length > 0) { sel[0].delete(); sendGridToWasm(); }
+        };
+        document.getElementById("btn-preview").onclick = function() { sendGridToWasm(); };
+        document.getElementById("btn-download").onclick = function() {
+            if (typeof wasm_download_dxf === "function") wasm_download_dxf();
+        };
+
+        setTimeout(function() { sendGridToWasm(); }, 500);
+    }
+
+    function sendGridToWasm() {
+        if (!gridTable) return;
+        var rows = gridTable.getData();
+        var csv = "name,x,wl,wr\n";
+        for (var i = 0; i < rows.length; i++)
+            csv += rows[i].name+","+rows[i].x+","+rows[i].wl+","+rows[i].wr+"\n";
+        if (typeof wasm_update_csv === "function") wasm_update_csv(csv);
+    }
+
+    // Called from WASM when file is dropped on egui canvas
+    function js_load_csv_to_grid(csv) {
+        if (!gridTable) return;
+        var lines = csv.split("\n"), data = [];
+        nextRowId = 1;
+        for (var i = 0; i < lines.length; i++) {
+            var l = lines[i].trim(); if (!l) continue;
+            var p = l.split(","); if (p.length < 2) continue;
+            var f = p[0].toLowerCase();
+            if (f.indexOf("name")>=0||f.indexOf("測点")>=0||f.indexOf("station")>=0) continue;
+            var x = parseFloat(p[1]); if (isNaN(x)) continue;
+            data.push({id:nextRowId++, name:p[0].trim(), x:x, wl:parseFloat(p[2])||0, wr:parseFloat(p[3])||0});
+        }
+        gridTable.setData(data);
+    }
+
+    // Fix eframe canvas sizing: eframe sets position:absolute on canvas
+    // which breaks flex layout. Re-parent canvas into preview-panel if needed
+    // and force sizing.
+    function fixCanvasLayout() {
+        var canvas = document.getElementById("road_drawing_canvas");
+        var panel = document.getElementById("preview-panel");
+        if (!canvas || !panel) return;
+        // Ensure canvas is inside preview-panel
+        if (canvas.parentElement !== panel) {
+            // eframe may have wrapped it in a div — move the wrapper
+            var wrapper = canvas.parentElement;
+            if (wrapper && wrapper !== panel) {
+                panel.appendChild(wrapper);
+            }
+        }
+        // Force canvas to fill preview-panel only
+        canvas.style.position = "absolute";
+        canvas.style.top = "0";
+        canvas.style.left = "0";
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
+    }
+    // Run after WASM init (give eframe time to set up)
+    setTimeout(fixCanvasLayout, 100);
+    setTimeout(fixCanvasLayout, 500);
+    setTimeout(fixCanvasLayout, 1500);
+
+    document.addEventListener("DOMContentLoaded", initGrid);
+    </script>
+</body>
+</html>
