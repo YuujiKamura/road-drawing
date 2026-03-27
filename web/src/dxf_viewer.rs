@@ -5,12 +5,11 @@
 //! the viewer reloads and re-renders automatically.
 
 use std::path::PathBuf;
-use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
 
 use egui::{CentralPanel, Color32, Pos2, RichText, Stroke, Vec2};
 
 use dxf_engine::DxfDocument;
+use file_watcher::FileWatcher;
 
 use super::renderer::dxf_color_to_egui;
 
@@ -83,54 +82,19 @@ pub struct DxfViewerApp {
     document: Option<DxfDocument>,
     status: String,
     reload_count: u32,
-    reload_rx: mpsc::Receiver<()>,
-    _watcher: notify::RecommendedWatcher,
+    watcher: FileWatcher,
 }
 
 impl DxfViewerApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, dxf_path: PathBuf) -> Self {
-        let (reload_tx, reload_rx) = mpsc::channel();
-
-        // Set up file watcher
-        let watch_path = dxf_path.clone();
-        let ctx = cc.egui_ctx.clone();
-
-        // Use a shared debounce flag to avoid rapid reloads
-        let pending = Arc::new(Mutex::new(false));
-        let pending_clone = pending.clone();
-
-        use notify::Watcher;
-        let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
-            if let Ok(event) = res {
-                use notify::EventKind;
-                match event.kind {
-                    EventKind::Modify(_) | EventKind::Create(_) => {
-                        let mut p = pending_clone.lock().unwrap();
-                        if !*p {
-                            *p = true;
-                            let _ = reload_tx.send(());
-                            ctx.request_repaint();
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        })
-        .expect("Failed to create file watcher");
-
-        // Watch the parent directory (more reliable for editors that do atomic writes)
-        let watch_dir = watch_path.parent().unwrap_or(&watch_path);
-        watcher
-            .watch(watch_dir.as_ref(), notify::RecursiveMode::NonRecursive)
-            .expect("Failed to watch directory");
+    pub fn new(_cc: &eframe::CreationContext<'_>, dxf_path: PathBuf) -> Self {
+        let watcher = FileWatcher::new(&dxf_path).expect("Failed to create file watcher");
 
         let mut app = Self {
             dxf_path,
             document: None,
             status: "Loading...".to_string(),
             reload_count: 0,
-            reload_rx,
-            _watcher: watcher,
+            watcher,
         };
         app.load_dxf();
         app
@@ -164,11 +128,7 @@ impl DxfViewerApp {
     }
 
     fn check_reload(&mut self) {
-        let mut reloaded = false;
-        while self.reload_rx.try_recv().is_ok() {
-            reloaded = true;
-        }
-        if reloaded {
+        if self.watcher.check_changed() {
             self.reload_count += 1;
             self.load_dxf();
         }
