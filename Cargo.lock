@@ -2626,6 +2626,7 @@ name = "road-section"
 version = "0.1.0"
 dependencies = [
  "dxf-engine",
+ "excel-parser",
 ]
 
 [[package]]
