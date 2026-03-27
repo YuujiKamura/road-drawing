@@ -412,6 +412,192 @@ fn test_cli_section_flag_single_csv() {
 }
 
 // ================================================================
+// --type triangle: real connected.csv from trianglelist test resources
+// ================================================================
+
+/// Trianglelist test resources path
+fn trianglelist_fixture_dir() -> PathBuf {
+    PathBuf::from(env!("HOMEPATH"))
+        .join("StudioProjects")
+        .join("trianglelist")
+        .join("app")
+        .join("src")
+        .join("test")
+        .join("resources")
+}
+
+#[test]
+fn test_cli_triangle_connected_csv() {
+    let fixture_dir = trianglelist_fixture_dir();
+    let csv_path = fixture_dir.join("connected.csv");
+    if !csv_path.exists() {
+        eprintln!("SKIP: connected.csv not found at {}", csv_path.display());
+        return;
+    }
+
+    let tmp_dir = std::env::temp_dir();
+    let output_path = tmp_dir.join("test_cli_triangle_connected.dxf");
+
+    let output = Command::new(bin_path())
+        .args([
+            "generate",
+            "--input",
+            csv_path.to_str().unwrap(),
+            "--output",
+            output_path.to_str().unwrap(),
+            "--type",
+            "triangle",
+        ])
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert!(
+        output.status.success(),
+        "CLI --type triangle connected.csv should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(output_path.exists(), "Output DXF file should be created");
+
+    let dxf_content = fs::read_to_string(&output_path).unwrap();
+
+    // Structural checks
+    assert!(dxf_content.contains("SECTION"), "DXF should have SECTION");
+    assert!(dxf_content.contains("LINE"), "DXF should have LINE entities");
+    assert!(dxf_content.contains("TEXT"), "DXF should have TEXT entities");
+    assert!(dxf_content.contains("EOF"), "DXF should end with EOF");
+
+    // Lint validation
+    assert!(
+        dxf_engine::DxfLinter::is_valid(&dxf_content),
+        "connected.csv triangle DXF must pass linter"
+    );
+
+    // 7 triangles → 21 lines (3 edges each) + 14 texts (area + number each)
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("7 triangles"),
+        "Should report 7 triangles: {}",
+        stderr
+    );
+
+    // Parse DXF and verify entity counts
+    let doc = dxf_engine::parse_dxf(&dxf_content).unwrap();
+    assert_eq!(doc.lines.len(), 21, "7 triangles × 3 edges = 21 lines");
+    assert_eq!(doc.texts.len(), 14, "7 triangles × 2 texts = 14 texts");
+
+    // Verify header info is printed
+    assert!(
+        stderr.contains("接続形式テスト") || stderr.contains("テスト路線"),
+        "Should print header info: {}",
+        stderr
+    );
+
+    fs::remove_file(&output_path).ok();
+}
+
+#[test]
+fn test_cli_triangle_connected_csv_areas() {
+    let fixture_dir = trianglelist_fixture_dir();
+    let csv_path = fixture_dir.join("connected.csv");
+    if !csv_path.exists() {
+        eprintln!("SKIP: connected.csv not found");
+        return;
+    }
+
+    let tmp_dir = std::env::temp_dir();
+    let output_path = tmp_dir.join("test_cli_triangle_connected_areas.dxf");
+
+    let output = Command::new(bin_path())
+        .args([
+            "generate",
+            "--input",
+            csv_path.to_str().unwrap(),
+            "--output",
+            output_path.to_str().unwrap(),
+            "--type",
+            "triangle",
+        ])
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert!(output.status.success());
+
+    let dxf_content = fs::read_to_string(&output_path).unwrap();
+    let doc = dxf_engine::parse_dxf(&dxf_content).unwrap();
+
+    // Extract area texts (height=0.3, color=7). Triangle numbers have height=0.4, color=5.
+    let area_texts: Vec<f64> = doc
+        .texts
+        .iter()
+        .filter(|t| (t.height - 0.3).abs() < 0.01 && t.color == 7)
+        .filter_map(|t| t.text.parse::<f64>().ok())
+        .collect();
+
+    assert_eq!(area_texts.len(), 7, "Should have 7 area values");
+
+    // All areas must be positive
+    for (i, &area) in area_texts.iter().enumerate() {
+        assert!(area > 0.0, "Triangle {} area should be > 0, got {}", i + 1, area);
+    }
+
+    // Total area from stderr
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("total area:"),
+        "Should report total area: {}",
+        stderr
+    );
+
+    fs::remove_file(&output_path).ok();
+}
+
+#[test]
+fn test_cli_triangle_minimal_csv() {
+    let fixture_dir = trianglelist_fixture_dir();
+    let csv_path = fixture_dir.join("minimal.csv");
+    if !csv_path.exists() {
+        eprintln!("SKIP: minimal.csv not found");
+        return;
+    }
+
+    let tmp_dir = std::env::temp_dir();
+    let output_path = tmp_dir.join("test_cli_triangle_minimal.dxf");
+
+    let output = Command::new(bin_path())
+        .args([
+            "generate",
+            "--input",
+            csv_path.to_str().unwrap(),
+            "--output",
+            output_path.to_str().unwrap(),
+            "--type",
+            "triangle",
+        ])
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert!(
+        output.status.success(),
+        "CLI --type triangle minimal.csv should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let dxf_content = fs::read_to_string(&output_path).unwrap();
+    assert!(dxf_engine::DxfLinter::is_valid(&dxf_content));
+
+    let doc = dxf_engine::parse_dxf(&dxf_content).unwrap();
+    // 3 independent triangles → 9 lines + 6 texts
+    assert_eq!(doc.lines.len(), 9, "3 triangles × 3 edges = 9 lines");
+    assert_eq!(doc.texts.len(), 6, "3 triangles × 2 texts = 6 texts");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("3 triangles"), "Should report 3 triangles: {}", stderr);
+
+    fs::remove_file(&output_path).ok();
+}
+
+// ================================================================
 // Unknown --type should fail
 // ================================================================
 
