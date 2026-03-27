@@ -391,3 +391,95 @@ No.2,40.0,3.25,3.25
     let dxf = writer.write(&[], &texts);
     assert!(DxfLinter::is_valid(&dxf));
 }
+
+// ================================================================
+// Gap: excel-parser → road-section integration (RawRow → StationData)
+// ================================================================
+
+#[test]
+fn test_excel_parser_to_road_section_pipeline() {
+    // Simulate excel-parser output (RawRow fields map to StationData)
+    let csv_text = "\
+区間1,台形計算
+測点名,単延長L,幅員W,幅員右
+No.0,0.00,3.25,3.25
+,10.00,3.25,3.50
+,10.00,3.00,3.00
+";
+    let sections = excel_parser::transform::list_sections_text(csv_text, "test.csv");
+    assert!(!sections.is_empty(), "Should detect at least one section");
+
+    let rows = excel_parser::transform::extract_and_transform_text(csv_text, &sections[0]).unwrap();
+    assert!(rows.len() >= 3, "Should have at least 3 rows after transform");
+
+    // Convert RawRow → StationData (same field mapping as CLI does)
+    let stations: Vec<_> = rows.iter().map(|r| {
+        road_section::StationData::new(&r.name, r.x, r.wl, r.wr)
+    }).collect();
+
+    // Verify station names were filled
+    assert!(!stations[0].name.is_empty(), "First station should have a name");
+    assert!(stations[0].name.starts_with("No."), "First station should be No.0, got '{}'", stations[0].name);
+
+    // Full pipeline: calculate geometry → DXF → lint
+    let config = RoadSectionConfig::default();
+    let geometry = calculate_road_section(&stations, &config);
+    let (lines, texts) = geometry_to_dxf(&geometry);
+    let writer = DxfWriter::new();
+    let dxf = writer.write(&lines, &texts);
+
+    assert!(DxfLinter::is_valid(&dxf), "excel-parser → road-section → DXF pipeline must pass lint");
+    let doc = dxf_engine::parse_dxf(&dxf).unwrap();
+    assert_eq!(doc.lines.len(), lines.len(), "Roundtrip line count");
+    assert_eq!(doc.texts.len(), texts.len(), "Roundtrip text count");
+}
+
+// ================================================================
+// Gap: full pipeline with reader roundtrip verification
+// ================================================================
+
+#[test]
+fn test_full_pipeline_csv_to_dxf_roundtrip() {
+    let csv = "\
+測点名,累積延長,左幅員,右幅員
+No.0,0.0,2.50,2.50
+No.0+10,10.0,2.50,3.00
+No.1,20.0,3.00,3.00
+No.1+10,30.0,3.00,2.50
+No.2,40.0,2.50,2.50
+";
+    let stations = parse_road_section_csv(csv).unwrap();
+    let config = RoadSectionConfig::default();
+    let geometry = calculate_road_section(&stations, &config);
+    let (lines, texts) = geometry_to_dxf(&geometry);
+
+    let writer = DxfWriter::new();
+    let dxf = writer.write(&lines, &texts);
+
+    // Lint
+    assert!(DxfLinter::is_valid(&dxf));
+
+    // Parse back
+    let doc = dxf_engine::parse_dxf(&dxf).unwrap();
+
+    // Line count preserved
+    assert_eq!(doc.lines.len(), lines.len());
+    // Text count preserved
+    assert_eq!(doc.texts.len(), texts.len());
+
+    // All station names survive roundtrip
+    let parsed_names: Vec<&str> = doc.texts.iter()
+        .filter(|t| t.text.starts_with("No."))
+        .map(|t| t.text.as_str())
+        .collect();
+    for s in &stations {
+        assert!(parsed_names.contains(&s.name.as_str()),
+            "Station '{}' not found in roundtrip DXF texts", s.name);
+    }
+
+    // First line coordinate precision
+    let orig = &lines[0];
+    let read = &doc.lines[0];
+    assert!((orig.x1 - read.x1).abs() < 0.01, "x1 precision lost");
+    assert!((orig.y1 - read.y1).abs() < 0.01, "y1 precision lost");
+}

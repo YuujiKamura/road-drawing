@@ -13,3 +13,6 @@ categories = ["science", "graphics"]
 
 [dependencies]
 dxf-engine = { path = "../dxf-engine" }
+
+[dev-dependencies]
+excel-parser = { path = "../excel-parser" }
