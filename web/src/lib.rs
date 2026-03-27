@@ -56,7 +56,7 @@ pub fn wasm_download_dxf() {
     let array = js_sys::Array::new();
     array.push(&JsValue::from_str(&dxf_content));
     let mut opts = web_sys::BlobPropertyBag::new();
-    opts.type_("application/dxf");
+    opts.set_type("application/dxf");
     let blob = web_sys::Blob::new_with_str_sequence_and_options(&array, &opts).unwrap();
     let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
     let a: web_sys::HtmlAnchorElement = document
