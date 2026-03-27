@@ -56,6 +56,14 @@ triangle-core = { path = "../crates/triangle-core" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.11"
+notify = "7"
+
+[[bin]]
+name = "dxf-viewer"
+path = "src/bin/dxf_viewer.rs"
+
+[dev-dependencies]
+tempfile = "3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_log = "1.0"
