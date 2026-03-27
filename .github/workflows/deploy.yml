@@ -61,6 +61,10 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Flutter pub get
+        working-directory: flutter_web
+        run: flutter pub get
+
       - name: Flutter tests
         working-directory: flutter_web
         run: flutter test
@@ -71,6 +75,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -102,6 +109,10 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      - name: Flutter pub get
+        working-directory: flutter_web
+        run: flutter pub get
 
       - name: Flutter build web
         working-directory: flutter_web
