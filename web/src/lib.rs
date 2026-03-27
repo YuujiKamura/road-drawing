@@ -110,9 +110,9 @@ pub fn start() -> Result<(), JsValue> {
             .await;
         match &start_result {
             Ok(_) => {
-                // Hide loading spinner
+                // Hide loading spinner via setAttribute (no extra web-sys features needed)
                 if let Some(el) = document.get_element_by_id("loading") {
-                    let _ = el.class_list().add_1("hidden");
+                    let _ = el.set_attribute("class", "hidden");
                 }
                 log::info!("eframe started successfully");
             }
