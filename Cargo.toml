@@ -5,8 +5,10 @@ members = [
     "crates/excel-parser",
     "crates/triangle-core",
     "crates/road-marking",
+    "crates/file-watcher",
     "cli",
     "web",
+    "tools/dxf-viewer",
 ]
 resolver = "2"
 
