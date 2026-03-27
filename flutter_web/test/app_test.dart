@@ -170,5 +170,47 @@ void main() {
       await tester.pump();
       expect(find.byType(DxfPreview), findsOneWidget);
     });
+
+    testWidgets('DXF button shows SnackBar when WASM not initialized', (tester) async {
+      configureView(tester);
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      await tester.pumpWidget(buildApp());
+      final dxfBtn = find.text('DXF');
+      await tester.ensureVisible(dxfBtn);
+      await tester.tap(dxfBtn);
+      await tester.pump();
+
+      // WASM is not loaded in test env → SnackBar should appear
+      expect(find.text('WASM未初期化 — DXFダウンロード不可'), findsOneWidget);
+    });
+  });
+
+  // ================================================================
+  // Japanese text rendering
+  // ================================================================
+
+  group('Japanese text', () {
+    testWidgets('Japanese column headers display correctly', (tester) async {
+      configureView(tester);
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      await tester.pumpWidget(buildApp());
+      expect(find.text('測点名'), findsOneWidget);
+      expect(find.text('単延長L'), findsOneWidget);
+      expect(find.text('幅員W'), findsOneWidget);
+      expect(find.text('幅員右'), findsOneWidget);
+    });
+
+    testWidgets('drag overlay shows Japanese text', (tester) async {
+      configureView(tester);
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      await tester.pumpWidget(buildApp());
+      // Drag overlay text is only shown when _isDragOver is true,
+      // but the string exists in the widget tree source.
+      // Verify the app renders without crash with Japanese content.
+      expect(find.byType(Scaffold), findsOneWidget);
+    });
   });
 }

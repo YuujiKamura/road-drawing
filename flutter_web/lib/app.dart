@@ -102,6 +102,12 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   void _onDownload() {
+    if (!WasmBridge.isInitialized) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('WASM未初期化 — DXFダウンロード不可')),
+      );
+      return;
+    }
     final dxf = DxfService.generateDxf(_stations);
     if (dxf.startsWith('ERROR:')) {
       ScaffoldMessenger.of(context).showSnackBar(
