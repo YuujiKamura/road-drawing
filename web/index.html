@@ -33,8 +33,15 @@
         #grid-toolbar button:hover { background: #3a3a5e; }
         #grid-toolbar .title { color: #aaa; font-size: 13px; font-weight: bold; margin-right: auto; }
         #grid-container { flex: 1; overflow: auto; }
-        #preview-panel { flex: 1; height: 100%; position: relative; }
-        #preview-panel canvas { display: block; width: 100%; height: 100%; }
+        #preview-panel { flex: 1; height: 100%; position: relative; overflow: hidden; }
+        /* eframe wraps canvas in a div — constrain both */
+        #preview-panel canvas,
+        #preview-panel > div {
+            position: absolute !important;
+            top: 0; left: 0;
+            width: 100% !important;
+            height: 100% !important;
+        }
         #loading {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             display: flex; flex-direction: column; justify-content: center; align-items: center;
@@ -136,6 +143,33 @@
         }
         gridTable.setData(data);
     }
+
+    // Fix eframe canvas sizing: eframe sets position:absolute on canvas
+    // which breaks flex layout. Re-parent canvas into preview-panel if needed
+    // and force sizing.
+    function fixCanvasLayout() {
+        var canvas = document.getElementById("road_drawing_canvas");
+        var panel = document.getElementById("preview-panel");
+        if (!canvas || !panel) return;
+        // Ensure canvas is inside preview-panel
+        if (canvas.parentElement !== panel) {
+            // eframe may have wrapped it in a div — move the wrapper
+            var wrapper = canvas.parentElement;
+            if (wrapper && wrapper !== panel) {
+                panel.appendChild(wrapper);
+            }
+        }
+        // Force canvas to fill preview-panel only
+        canvas.style.position = "absolute";
+        canvas.style.top = "0";
+        canvas.style.left = "0";
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
+    }
+    // Run after WASM init (give eframe time to set up)
+    setTimeout(fixCanvasLayout, 100);
+    setTimeout(fixCanvasLayout, 500);
+    setTimeout(fixCanvasLayout, 1500);
 
     document.addEventListener("DOMContentLoaded", initGrid);
     </script>
