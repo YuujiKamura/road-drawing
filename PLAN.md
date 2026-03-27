@@ -1,18 +1,36 @@
 # road-drawing ロードマップ
 
-## テスト総数: 674 (全パス)
+## テスト総数: 768 (全パス)
 
 | Crate | Unit | Integration | Total |
 |-------|------|-------------|-------|
-| dxf-engine | 228 | 10 (compat) | 238 |
-| triangle-core | 120 | 19 + 8 (property) | 147 |
-| excel-parser | 77 | 7 (calamine) + 1 (real_file) | 85 |
-| road-section | 83 | 18 (e2e) | 101 |
-| road-marking | 44 | — | 44 |
-| road-drawing-web | 51 | — | 51 |
-| cli | — | 6 (cli_test) | 6 |
+| dxf-engine | 238 | 10 (compat) + 3 (golden) | 251 |
+| triangle-core | 124 | 19 (integration) + 8 (property) | 151 |
+| excel-parser | 82 | 7 (calamine) + 1 (real_file) + 10 (stress) | 100 |
+| road-marking | 88 | — | 88 |
+| road-drawing-web | 64 | 9 (e2e_pipeline) + 4 (hotswap) | 77 |
+| road-section | 44 | 20 (e2e, 1 ignored) | 64 |
+| cli | — | 11 (cli_test) + 24 (fixture_validation) | 35 |
 | doctests | 2 | — | 2 |
-| **Total** | **605** | **69** | **674** |
+| **Total** | **642** | **126** | **768** |
+
+## Crate構成
+
+```
+crates/
+├── dxf-engine/     — DXFエンティティ生成・リーダー・バリデーション・Lint・空間インデックス
+├── road-section/   — 路線展開図ジオメトリ計算 + CSVパーサー
+├── excel-parser/   — Excel/CSV入力パース (section_detector/station_name/distance/transform)
+├── triangle-core/  — 三角形リスト計算エンジン (triangle/connection/csv_loader)
+├── road-marking/   — 区画線生成 (crosswalk + command)
+cli/                — road-drawing CLIツール
+web/                — Web UI (egui native DXFビューワ + WASM + DXFエクスポート)
+  ├── src/app.rs          — CSV D&D + Shift_JIS自動検出 + プレビュー描画
+  ├── src/renderer.rs     — Viewport座標変換 (DXF Y-up → screen Y-down)
+  ├── src/dxf_export.rs   — stations_to_dxf() + カスタムスケール
+  ├── src/dxf_viewer.rs   — DXFホットスワップビューワ (notify file watcher)
+  └── src/bin/dxf_viewer.rs — ビューワバイナリ
+```
 
 ## Phase完了状況
 
@@ -22,8 +40,67 @@
 | **2** | ✅ 完了 | excel-parser (section_detector/station_name/distance/transform) |
 | **2.5** | 未着手 | LLMによる勝手書式→マスタ書式変換 |
 | **3** | ✅ 完了 | triangle-core + road-marking + dxf-engine reader/index |
-| **4** | ✅ 完了 | Web UI (egui WASM + trunk build + GitHub Pages CI) |
+| **4 (egui)** | ✅ 完了 | egui WASM + DXFプレビュー + GitHub Pages CI |
+| **4.5** | 🔄 方針転換 | HTML/JS + Tabulator + Rust WASMバックエンドへ移行 (Issue #6) |
 | **5** | 未着手 | trianglelist依存切替 + crates.io publish |
+
+### Issues 完了状況
+
+| Issue | Title | Status |
+|-------|-------|--------|
+| #1 | Phase 2: Excel入力パーサー | ✅ 完了 |
+| #2 | Phase 3: Kotlin区画線ロジック移植 | ✅ 完了 |
+| #3 | Phase 4: Web UI (egui WASM) | ✅ 完了 |
+| #4 | Phase 5: trianglelist依存切替 | 未着手 |
+| #5 | Phase 2.5: LLM書式変換 | 未着手 |
+| #6 | Phase 4.5: Web UIエディタ選定 | OPEN — 方針決定済み |
+| #7 | Golden DXF regression testing | ✅ 完了 |
+| #8 | テストフィクスチャ自己完結化 | ✅ 完了 |
+| #9 | DXFホットスワップビューワ基盤整備 | ✅ 完了 |
+
+---
+
+## Phase 4.5: HTML/JS + Rust WASM バックエンド (Issue #6)
+
+### 方針転換の理由
+Phase 4のegui WASMは描画プレビューとして動くが、CSVエディタやコードエディタのようなリッチUI部品との統合が困難（egui CanvasとDOM要素のz-index/イベント共存問題）。
+
+### 新アーキテクチャ
+```
+[HTML/JS フロント]
+├── Tabulator (99KB, MIT) — CSV 4列グリッドエディタ
+├── CodeMirror 6 (124KB, MIT) — JSON/DXFコードエディタ
+├── Canvas/SVG — DXFプレビュー描画
+└── wasm-bindgen ↔ Rust WASM バックエンド
+    ├── excel-parser — Excel/CSVパース
+    ├── road-section — ジオメトリ計算
+    ├── dxf-engine — DXF生成
+    └── triangle-core — 三角形計算
+```
+
+### ワークフロー
+```
+[Excel D&D] or [手入力]
+    ↓
+[Tabulator 4列グリッド] ← ユーザーが直接編集可能
+    ↓ (onEdit → WASM呼び出し)
+[Rust WASM: excel-parser → road-section → dxf-engine]
+    ↓
+[Canvas/SVG プレビュー] ← リアルタイム更新
+    ↓
+[DXFダウンロード] ← Blob生成
+```
+
+### 既存egui資産の扱い
+- `web/src/app.rs` (CSV D&D + プレビュー): HTML/JSに置き換え
+- `web/src/renderer.rs` (Viewport/座標変換): ロジックはWASMに残す
+- `web/src/dxf_viewer.rs` (ホットスワップビューワ): nativeバイナリとして維持 (#9)
+- `web/src/dxf_export.rs` (DXF生成): WASM経由で呼び出し
+
+### タスク
+- [ ] Tabulator + CodeMirror のPoC作成
+- [ ] wasm-bindgen経由のexcel-parser/road-section呼び出しPoC
+- [ ] LLM整形フロー + ルール蓄積の設計詳細
 
 ---
 
@@ -256,65 +333,25 @@ FULL (28列): + NAME, POINT位置, COLOR, DIM配置, ANGLE, ...
 
 ## Phase 4: Web UI層 — egui WASM (Issue #3) ✅ 完了
 
-51テスト全パス。web/ crate作成済み (eframe 0.29, egui 0.29)。
+77テスト全パス。web/ crate作成済み (eframe 0.29, egui 0.29)。
 app.rs: CSV D&D + Shift_JIS自動検出 + road-section プレビュー描画。
 renderer.rs: Viewport座標変換 (DXF Y-up → screen Y-down) + DXFカラーマッピング。
 dxf_export.rs: stations_to_dxf() + カスタムスケール対応 + ラウンドトリップ検証済み。
+dxf_viewer.rs: DXFホットスワップビューワ (notify file watcher + auto-reload) (#9)。
 WASM ビルド: `trunk build --release` 通過済み。calamine も WASM で動作確認済み。
 GitHub Pages デプロイ: `.github/workflows/deploy.yml` 設定済み (push to master → trunk build → Pages)。
-Note: Pages有効化は Settings → Pages → Source: GitHub Actions で手動設定。
 
-### 目的
-ブラウザで Excel D&D → プレビュー → DXFダウンロード。trianglelist-web の egui 骨格を移植。
+### Issue #7: Golden DXF regression testing ✅ 完了
+DXF構造比較 (ハンドル/タイムスタンプ無視)。golden_lint_test + comparator。
 
-### タスク
+### Issue #8: テストフィクスチャ自己完結化 ✅ 完了
+外部リポ依存を解消。24 fixture validation tests。
 
-#### 4-1: `web/` ディレクトリ作成
-**新規ファイル:**
-- `web/Cargo.toml` — eframe 0.29, wasm-bindgen, web-sys
-- `web/src/lib.rs` — WASM エントリポイント
-- `web/src/app.rs` — egui アプリケーション本体
-- `web/src/renderer.rs` — DXFエンティティ → egui Shape 変換
-- `web/src/file_handler.rs` — File API D&D 受付
-- `web/index.html` — ホスティング用 HTML
-- `web/Trunk.toml` — trunk ビルド設定
-
-**移植元:**
-- `trianglelist-web/` の egui 骨格
-- `csv_to_dxf/web/src/lib.rs` の DXF ビューア (Canvas レンダリング、パン・ズーム、ダーク/ライト切替)
-
-#### 4-2: Excel/CSV D&D 対応
-- calamine の WASM 対応確認
-- fallback: SheetJS (JS) でパースし、JSON で Rust/WASM に渡す
-- `web-sys::FileReader` + `web-sys::DragEvent` でファイル受付
-
-#### 4-3: リアルタイムプレビュー + DXFダウンロード
-- egui Canvas に路線展開図/三角形リストを描画
-- DXF生成 → `Blob` → `<a download>` クリックでダウンロード
-- プレビュー色: DXFカラーインデックス → RGB マッピング (csv_to_dxf/web の実装流用)
-
-#### 4-4: GitHub Pages デプロイ
-- `trunk build --release` + `wasm-opt -Oz`
-- GitHub Actions: push to `gh-pages` ブランチ
-- `.github/workflows/deploy.yml` 作成
-
-### 検証
-1. ローカル: `trunk serve` でブラウザ確認
-2. D&D: `csv_to_dxf/data/` の全サンプルファイルをドロップして描画確認
-3. DXFダウンロード: ダウンロードした DXF を AutoCAD/LibreCAD で開いて CLI 出力と一致確認
-4. GitHub Pages: デプロイ後にモバイル含む複数ブラウザで動作確認
-5. WASM サイズ: wasm-opt 後 1MB 以下目標
-
-### リスク
-- **calamine WASM**: WASM ターゲットで calamine がコンパイルできない場合、Excel→JSON 変換を JS 側 (SheetJS) に移す必要あり
-- **egui テキスト描画**: 日本語フォント (CJK) の WASM バンドルサイズ。NotoSansCJK-subset が必要
-- **GitHub Pages = public**: 業務データを含むデモは禁止。サンプルデータのみ使用
-- **eframe 0.29 互換**: egui/eframe のバージョン固定。0.30 が出ると API 変更の可能性
-
-### 依存関係
-- Phase 2 の excel-parser (WASM 対応版 or JS fallback)
-- Phase 3 の triangle-core (三角形リスト描画用)
-- Phase 1 の dxf-engine + road-section
+### Issue #9: DXFホットスワップビューワ基盤整備 ✅ 完了
+- `dxf-viewer` バイナリ: `cargo run --bin dxf-viewer -- <path.dxf>`
+- notify crate によるファイル変更検知 + 自動リロード
+- LINE/TEXT/CIRCLE/LWPOLYLINE 全エンティティ描画
+- テスト: BBox (7) + DXFエンティティ→画面座標変換 (6) + ファイル監視 (4) + E2Eパイプライン (9)
 
 ---
 
@@ -378,23 +415,26 @@ trianglelist と csv_to_dxf のコード重複を解消し、road-drawing を si
 ## アーキテクチャ全体図
 
 ```
-                    ┌─────────────┐
-                    │   web/      │  egui WASM (Phase 4)
-                    │  (eframe)   │
-                    └──────┬──────┘
-                           │
-┌──────────┐    ┌──────────┴──────────┐    ┌──────────────┐
-│  cli/    │    │    crates/          │    │ trianglelist │
-│(Phase 1) │────│                     │────│  (Phase 5)   │
-└──────────┘    │  excel-parser (P2)  │    └──────────────┘
-   │            │  road-section (P1)  │
-   │ --ai-parse │  triangle-core (P3) │
-   │            │  road-marking  (P3) │
-   ▼            │  dxf-engine    (P1) │
-┌──────────┐    └─────────────────────┘
+                    ┌──────────────────┐
+                    │  HTML/JS フロント │  Phase 4.5 (Tabulator + CodeMirror 6)
+                    │  + Rust WASM     │
+                    └────────┬─────────┘
+                             │ wasm-bindgen
+┌──────────┐    ┌────────────┴────────────┐    ┌──────────────┐
+│  cli/    │    │    crates/              │    │ trianglelist │
+│(Phase 1) │────│                         │────│  (Phase 5)   │
+└──────────┘    │  excel-parser (P2)      │    └──────────────┘
+   │            │  road-section (P1)      │
+   │ --ai-parse │  triangle-core (P3)     │
+   │            │  road-marking  (P3)     │
+   ▼            │  dxf-engine    (P1)     │
+┌──────────┐    └─────────────────────────┘
 │ LLM層    │  calamine dump → LLM → マスタCSV (Phase 2.5)
 │(P2.5)    │
 └──────────┘
+
+Native tools:
+  dxf-viewer — DXFホットスワップビューワ (egui native, Issue #9)
 ```
 
 **レイヤー依存:**
@@ -405,7 +445,8 @@ excel-parser → (standalone, calamine)
 LLM層 (P2.5) → excel-parser + cli-ai-analyzer
 cli → excel-parser + road-section + triangle-core + road-marking
 cli --ai-parse → LLM層
-web → 全 crate
+web (WASM) → excel-parser + road-section + dxf-engine + triangle-core
+web (native) → dxf-engine + road-section (dxf-viewer)
 ```
 
 ---
@@ -414,10 +455,11 @@ web → 全 crate
 
 | Phase | 優先度 | 前提 | 規模感 |
 |-------|--------|------|--------|
-| **2** | ✅ 完了 | Phase 1 | 中 (4モジュール, 77テスト) |
+| **2** | ✅ 完了 | Phase 1 | 中 (4モジュール, 100テスト) |
 | **2.5** | 高 — 未知書式対応 | Phase 2 | 中 (calamine dump + LLM + CLI) |
-| **3** | ✅ 完了 | Phase 1 | 大 (triangle-core 112 + road-marking 44 + dxf-engine reader 228テスト) |
-| **4** | ✅ 完了 | Phase 2+3 | 中 (Web 51テスト, WASM build + CI deploy済) |
+| **3** | ✅ 完了 | Phase 1 | 大 (triangle-core 151 + road-marking 88 + dxf-engine 251テスト) |
+| **4** | ✅ 完了 | Phase 2+3 | 中 (Web 77テスト, WASM build + CI deploy済) |
+| **4.5** | 次 — UI刷新 | Phase 4 | 中 (HTML/JS + Tabulator + WASM バインディング) |
 | **5** | P3 — 安定後 | Phase 2+3+4 | 小 (依存切替 + publish) |
 
 ---
