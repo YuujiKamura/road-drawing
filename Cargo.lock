@@ -2819,6 +2819,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "road-drawing-wasm"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "dxf-engine",
+ "excel-parser",
+ "road-section",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "road-drawing-web"
 version = "0.1.0"
 dependencies = [

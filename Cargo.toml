@@ -6,6 +6,7 @@ members = [
     "crates/triangle-core",
     "crates/road-marking",
     "crates/file-watcher",
+    "crates/road-drawing-wasm",
     "cli",
     "web",
     "tools/dxf-viewer",

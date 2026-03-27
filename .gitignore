@@ -1,2 +1,10 @@
 /target
 web/dist/
+web/flutter/
+.gstack/
+LOCAL_APPDATA_FONTCONFIG_CACHE/
+flutter_web/.dart_tool/
+flutter_web/.idea/
+flutter_web/build/
+flutter_web/web/wasm/
+crates/road-drawing-wasm/pkg/
