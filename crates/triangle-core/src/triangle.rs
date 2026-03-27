@@ -619,4 +619,69 @@ mod tests {
         assert!((t1.point_bc().x - t2.point_bc().x).abs() < 0.001);
         assert!((t1.point_bc().y - t2.point_bc().y).abs() < 0.001);
     }
+
+    // ================================================================
+    // Gap: negative coordinate origin
+    // ================================================================
+
+    #[test]
+    fn test_vertex_placement_negative_origin() {
+        let origin = Point::new(-500.0, -300.0);
+        let t = Triangle::with_angle(6.0, 5.0, 4.0, origin, 0.0);
+        assert!((t.point_ca().x - (-500.0)).abs() < 0.001);
+        assert!((t.point_ca().y - (-300.0)).abs() < 0.001);
+        // AB should be at origin + (6, 0)
+        assert!((t.point_ab().x - (-494.0)).abs() < 0.001);
+        // Side lengths preserved
+        let ca_ab = t.point_ca().distance_to(t.point_ab());
+        let ab_bc = t.point_ab().distance_to(t.point_bc());
+        let bc_ca = t.point_bc().distance_to(t.point_ca());
+        assert!((ca_ab - 6.0).abs() < 0.01);
+        assert!((ab_bc - 5.0).abs() < 0.01);
+        assert!((bc_ca - 4.0).abs() < 0.01);
+    }
+
+    // ================================================================
+    // Gap: very thin (near-degenerate but valid) triangle
+    // ================================================================
+
+    #[test]
+    fn test_very_thin_triangle_valid() {
+        // Sides 100, 100, 0.1 — extremely thin but valid
+        let t = Triangle::new(100.0, 100.0, 0.1);
+        assert!(t.is_valid(), "100, 100, 0.1 should be valid");
+        assert!(t.area() > 0.0, "Should have positive area");
+        // angle_c (opposite 0.1) should be near 0
+        assert!(t.angle_c() < 0.1, "Thin triangle angle should be < 0.1°, got {}", t.angle_c());
+        // Vertex distances should match
+        let ca_ab = t.point_ca().distance_to(t.point_ab());
+        let ab_bc = t.point_ab().distance_to(t.point_bc());
+        let bc_ca = t.point_bc().distance_to(t.point_ca());
+        assert!((ca_ab - 100.0).abs() < 0.01);
+        assert!((ab_bc - 100.0).abs() < 0.01);
+        assert!((bc_ca - 0.1).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_very_thin_triangle_area_small() {
+        // 100, 100, 0.1 → height ≈ 0.05, area ≈ 0.05 * 0.1 / 2 ≈ very small
+        let t = Triangle::new(100.0, 100.0, 0.1);
+        // Heron: s=100.05, area = sqrt(100.05 * 0.05 * 0.05 * 99.95) ≈ 5.0 (rounded)
+        assert!(t.area() <= 5.0, "Thin triangle area should be small, got {}", t.area());
+    }
+
+    // ================================================================
+    // Gap: negative angle (wrapping)
+    // ================================================================
+
+    #[test]
+    fn test_vertex_placement_negative_angle() {
+        // -90° should be equivalent to 270°
+        let t_neg = Triangle::with_angle(3.0, 4.0, 5.0, Point::new(0.0, 0.0), -90.0);
+        let t_pos = Triangle::with_angle(3.0, 4.0, 5.0, Point::new(0.0, 0.0), 270.0);
+        assert!((t_neg.point_ab().x - t_pos.point_ab().x).abs() < 0.001);
+        assert!((t_neg.point_ab().y - t_pos.point_ab().y).abs() < 0.001);
+        assert!((t_neg.point_bc().x - t_pos.point_bc().x).abs() < 0.001);
+        assert!((t_neg.point_bc().y - t_pos.point_bc().y).abs() < 0.001);
+    }
 }

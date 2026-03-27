@@ -1066,4 +1066,92 @@ mod tests {
         assert!((path[1].x - 100.0).abs() < 0.001);
     }
 
+    // ================================================================
+    // Gap: multi-segment centerline crosswalk
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_multi_segment_l_shaped_road() {
+        // L-shaped road: horizontal then vertical
+        let centerlines = vec![
+            DxfLine::new(0.0, 0.0, 10000.0, 0.0),      // horizontal segment
+            DxfLine::new(10000.0, 0.0, 10000.0, 10000.0), // vertical segment
+        ];
+        let config = CrosswalkConfig {
+            start_offset: 15000.0, // past the bend, on the vertical segment
+            stripe_count: 3,
+            ..CrosswalkConfig::default()
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 12, "3 stripes × 4 lines on multi-segment road");
+
+        // Stripes should be on the vertical segment, perpendicular = horizontal
+        // So stripe Y values should be near 15000-10000 = 5000 along vertical
+        let all_y: Vec<f64> = result.iter().flat_map(|l| vec![l.y1, l.y2]).collect();
+        let avg_y: f64 = all_y.iter().sum::<f64>() / all_y.len() as f64;
+        assert!(avg_y > 3000.0 && avg_y < 7000.0,
+            "Stripes on vertical segment should have avg Y near 5000, got {}", avg_y);
+    }
+
+    #[test]
+    fn test_crosswalk_multi_segment_at_bend() {
+        // Stripes placed exactly at the bend point
+        let centerlines = vec![
+            DxfLine::new(0.0, 0.0, 5000.0, 0.0),
+            DxfLine::new(5000.0, 0.0, 10000.0, 5000.0), // 45° upward
+        ];
+        let config = CrosswalkConfig {
+            start_offset: 5000.0, // exactly at the bend
+            stripe_count: 1,
+            ..CrosswalkConfig::default()
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        assert_eq!(result.len(), 4, "Should generate 1 stripe at bend point");
+    }
+
+    #[test]
+    fn test_build_centerline_path_multi_segment() {
+        let lines = vec![
+            DxfLine::new(0.0, 0.0, 100.0, 0.0),
+            DxfLine::new(100.0, 0.0, 100.0, 100.0),
+            DxfLine::new(100.0, 100.0, 200.0, 100.0),
+        ];
+        let path = build_centerline_path(&lines);
+        assert_eq!(path.len(), 4, "3 segments should produce 4 path points");
+        assert!((path[0].x - 0.0).abs() < 0.001);
+        assert!((path[1].x - 100.0).abs() < 0.001);
+        assert!((path[2].y - 100.0).abs() < 0.001);
+        assert!((path[3].x - 200.0).abs() < 0.001);
+    }
+
+    // ================================================================
+    // Gap: very short centerline (shorter than crosswalk width)
+    // ================================================================
+
+    #[test]
+    fn test_crosswalk_very_short_centerline() {
+        // Centerline is only 100mm — shorter than default stripe spacing
+        let centerlines = vec![DxfLine::new(0.0, 0.0, 100.0, 0.0)];
+        let config = CrosswalkConfig {
+            start_offset: 50.0,
+            stripe_count: 1,
+            ..CrosswalkConfig::default()
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        // Should still generate geometry (stripes extend perpendicular, not along road)
+        assert_eq!(result.len(), 4, "Short centerline should still produce 1 stripe");
+    }
+
+    #[test]
+    fn test_crosswalk_offset_beyond_centerline_end() {
+        let centerlines = vec![DxfLine::new(0.0, 0.0, 1000.0, 0.0)];
+        let config = CrosswalkConfig {
+            start_offset: 5000.0, // way past the 1000mm centerline
+            stripe_count: 1,
+            ..CrosswalkConfig::default()
+        };
+        let result = generate_crosswalk(&centerlines, &config);
+        // point_at_distance returns last point as fallback
+        assert_eq!(result.len(), 4, "Offset beyond end should still generate at last point");
+    }
 }
