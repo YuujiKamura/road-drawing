@@ -100,9 +100,24 @@ jobs:
       - name: Build WASM (wasm-pack)
         working-directory: crates/road-drawing-wasm
         run: |
-          wasm-pack build --target web \
+          wasm-pack build --release --target web \
             --out-dir ../../flutter_web/web/wasm \
             --out-name road_drawing_wasm
+
+      - name: Install binaryen (wasm-opt)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binaryen
+          wasm-opt --version
+
+      - name: Optimize WASM with wasm-opt -Oz
+        working-directory: flutter_web/web/wasm
+        run: |
+          echo "Before wasm-opt -Oz:"
+          ls -lh road_drawing_wasm_bg.wasm
+          wasm-opt -Oz -o road_drawing_wasm_bg.wasm road_drawing_wasm_bg.wasm
+          echo "After wasm-opt -Oz:"
+          ls -lh road_drawing_wasm_bg.wasm
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
