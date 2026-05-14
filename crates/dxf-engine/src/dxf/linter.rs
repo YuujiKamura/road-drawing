@@ -17,6 +17,21 @@ pub struct LintError {
     pub code: LintErrorCode,
     /// Human-readable message
     pub message: String,
+    /// Severity (Error or Warning). Currently always Error in produced LintErrors.
+    pub severity: Severity,
+}
+
+/// Severity level of a lint issue.
+///
+/// Marked `#[non_exhaustive]` so future variants (e.g. `Info`, `Hint`) can be
+/// added without a breaking change after 0.1.0 publish.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Severity {
+    /// Treated as a hard error (causes is_ok() / is_valid() to return false)
+    Error,
+    /// Non-fatal warning (does not affect is_ok() / is_valid())
+    Warning,
 }
 
 /// Error codes for lint issues
@@ -83,8 +98,11 @@ impl DxfLinter {
     /// Lint DXF content and return results
     pub fn lint(content: &str) -> LintResult {
         let mut errors = Vec::new();
-        let warnings = Vec::new();
+        let mut warnings: Vec<LintError> = Vec::new();
         let mut stats = LintStats::default();
+        // `warnings` is mut to support future warning-tier diagnostics; suppress
+        // unused_mut until the first warning push lands in a follow-up.
+        let _ = &mut warnings;
 
         let lines: Vec<&str> = content.lines().collect();
         stats.line_count = lines.len();
@@ -94,6 +112,7 @@ impl DxfLinter {
                 line: 0,
                 code: LintErrorCode::EmptyContent,
                 message: "DXF content is empty".to_string(),
+                severity: Severity::Error,
             });
             return LintResult { errors, warnings, stats };
         }
@@ -107,6 +126,7 @@ impl DxfLinter {
                     "Odd number of lines ({}). DXF requires group code/value pairs.",
                     lines.len()
                 ),
+                severity: Severity::Error,
             });
         }
 
@@ -128,6 +148,7 @@ impl DxfLinter {
                     line: line_num,
                     code: LintErrorCode::InvalidGroupCode,
                     message: format!("Invalid group code: '{}'", group_code_str),
+                    severity: Severity::Error,
                 });
                 i += 2;
                 continue;
@@ -141,6 +162,7 @@ impl DxfLinter {
                     line: line_num,
                     code: LintErrorCode::ContentAfterEof,
                     message: "Content found after EOF marker".to_string(),
+                    severity: Severity::Error,
                 });
             }
 
@@ -165,6 +187,7 @@ impl DxfLinter {
                                     line: line_num,
                                     code: LintErrorCode::UnmatchedEndsec,
                                     message: "ENDSEC without matching SECTION".to_string(),
+                                    severity: Severity::Error,
                                 });
                             }
                         }
@@ -187,6 +210,7 @@ impl DxfLinter {
                             line: line_num + 1, // Value line
                             code: LintErrorCode::DuplicateHandle,
                             message: format!("Duplicate handle: {}", handle),
+                            severity: Severity::Error,
                         });
                     } else {
                         handles.insert(handle);
@@ -206,6 +230,7 @@ impl DxfLinter {
                 line,
                 code: LintErrorCode::UnclosedSection,
                 message: format!("Section '{}' not closed with ENDSEC", name),
+                severity: Severity::Error,
             });
         }
 
@@ -215,6 +240,7 @@ impl DxfLinter {
                 line: lines.len(),
                 code: LintErrorCode::MissingEof,
                 message: "Missing EOF marker at end of file".to_string(),
+                severity: Severity::Error,
             });
         }
 
@@ -513,6 +539,7 @@ mod tests {
             line: 5,
             code: LintErrorCode::DuplicateHandle,
             message: "Duplicate handle: 100".to_string(),
+            severity: Severity::Error,
         };
         assert_eq!(err.message, "Duplicate handle: 100");
         assert_eq!(err.line, 5);
@@ -536,12 +563,28 @@ mod tests {
                 line: 1,
                 code: LintErrorCode::EmptyContent,
                 message: "test".to_string(),
+                severity: Severity::Error,
             }],
             warnings: vec![],
             stats: LintStats::default(),
         };
         assert!(!result.is_ok());
         assert!(result.has_errors());
+    }
+
+    #[test]
+    fn lint_errors_default_to_severity_error() {
+        let result = DxfLinter::lint("");
+        assert!(!result.errors.is_empty());
+        for e in &result.errors {
+            assert_eq!(
+                e.severity,
+                Severity::Error,
+                "{:?} should default to Error",
+                e.code
+            );
+        }
+        assert!(result.warnings.is_empty(), "no warnings should be produced yet");
     }
 
     #[test]
