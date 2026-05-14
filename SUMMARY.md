@@ -2,19 +2,21 @@
 
 Road section and triangle list diagram generator. Converts CSV/Excel input to DXF drawings for civil engineering road construction projects.
 
-## Test Results: 674 tests, all passing
+## Test Results: 877 tests, all passing (1 ignored)
 
 | Crate | Unit | Integration | Total |
 |-------|------|-------------|-------|
-| dxf-engine | 228 | 10 (compat) | 238 |
-| triangle-core | 120 | 19 + 8 (property) | 147 |
-| road-section | 83 | 18 (e2e) | 101 |
-| excel-parser | 77 | 7 (calamine) + 1 (real_file) | 85 |
-| road-drawing-web | 51 | — | 51 |
-| road-marking | 44 | — | 44 |
-| cli | — | 6 (cli_test) | 6 |
-| doctests | 2 | — | 2 |
-| **Total** | **605** | **69** | **674** |
+| dxf-engine | 238 | 10 (compat) + 3 (golden) | 251 |
+| triangle-core | 124 | 19 (integration) + 8 (property) | 151 |
+| excel-parser | 82 | 7 (calamine) + 1 (real_file) + 10 (stress) | 100 |
+| road-drawing-web | 89 | 9 (e2e_pipeline) + 4 (hotswap) | 102 |
+| road-marking | 88 | — | 88 |
+| road-drawing-wasm | — | 65 (wasm_bridge) | 65 |
+| road-section | 44 | 20 (e2e, 1 ignored) | 64 |
+| cli | — | 11 (cli_test) + 24 (fixture_validation) | 35 |
+| file-watcher | 18 | — | 18 |
+| doctests | 3 | — | 3 |
+| **Total** | **686** | **191** | **877** |
 
 ## Architecture
 

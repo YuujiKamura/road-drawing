@@ -1,18 +1,20 @@
 # road-drawing ロードマップ
 
-## テスト総数: 768 (全パス)
+## テスト総数: 877 (全パス, 1 ignored)
 
 | Crate | Unit | Integration | Total |
 |-------|------|-------------|-------|
 | dxf-engine | 238 | 10 (compat) + 3 (golden) | 251 |
 | triangle-core | 124 | 19 (integration) + 8 (property) | 151 |
 | excel-parser | 82 | 7 (calamine) + 1 (real_file) + 10 (stress) | 100 |
+| road-drawing-web | 89 | 9 (e2e_pipeline) + 4 (hotswap) | 102 |
 | road-marking | 88 | — | 88 |
-| road-drawing-web | 64 | 9 (e2e_pipeline) + 4 (hotswap) | 77 |
+| road-drawing-wasm | — | 65 (wasm_bridge) | 65 |
 | road-section | 44 | 20 (e2e, 1 ignored) | 64 |
 | cli | — | 11 (cli_test) + 24 (fixture_validation) | 35 |
-| doctests | 2 | — | 2 |
-| **Total** | **642** | **126** | **768** |
+| file-watcher | 18 | — | 18 |
+| doctests | 3 | — | 3 |
+| **Total** | **686** | **191** | **877** |
 
 ## Crate構成
 

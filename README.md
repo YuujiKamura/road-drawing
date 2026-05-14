@@ -49,14 +49,15 @@
 
 ```
 crates/
-├── dxf-engine/      DXF 読み書き・リンタ・空間インデックス (238 tests)
-├── road-section/    路線展開図ジオメトリ計算 (101 tests)
-├── triangle-core/   三角形リスト面積計算 (147 tests)
-├── excel-parser/    Excel/CSV 入力パース・台形計算セクション検出 (85 tests)
-├── road-marking/    区画線(横断歩道等)生成 (44 tests)
-├── file-watcher/    ファイル更新監視
-└── road-drawing-wasm/  Web 版エンジン (51 tests)
-cli/                 コマンドラインフロントエンド (6 tests)
+├── dxf-engine/      DXF 読み書き・リンタ・空間インデックス (251 tests)
+├── road-section/    路線展開図ジオメトリ計算 (64 tests)
+├── triangle-core/   三角形リスト面積計算 (151 tests)
+├── excel-parser/    Excel/CSV 入力パース・台形計算セクション検出 (100 tests)
+├── road-marking/    区画線(横断歩道等)生成 (88 tests)
+├── file-watcher/    ファイル更新監視 (18 tests)
+├── road-drawing-web/   Web 版エンジン (102 tests)
+└── road-drawing-wasm/  WASM ブリッジ (65 tests)
+cli/                 コマンドラインフロントエンド (35 tests)
 web/                 egui WASM Web アプリ
 ```
 
@@ -73,7 +74,7 @@ web  ─→ dxf-engine + road-section + excel-parser + triangle-core
 
 ```bash
 cargo build
-cargo test    # 全 674 テスト
+cargo test    # 全 877 テスト
 ```
 
 ## CLI 使い方
