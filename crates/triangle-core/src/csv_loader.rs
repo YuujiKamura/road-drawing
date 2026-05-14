@@ -107,6 +107,7 @@ pub fn parse_csv(text: &str) -> Result<ParsedCsv, CsvError> {
     }
 
     let mut triangles = Vec::new();
+    let mut warned_full_format = false;
     for (row_offset, line) in lines[data_start..].iter().enumerate() {
         let line = line.trim();
         if line.is_empty() {
@@ -116,6 +117,16 @@ pub fn parse_csv(text: &str) -> Result<ParsedCsv, CsvError> {
         let row_num = data_start + row_offset + 1;
         let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
         let col_count = parts.len();
+
+        if col_count > 6 && !warned_full_format {
+            eprintln!(
+                "[triangle-core] warning: CSV row {} has {} columns (FULL format). \
+                 Columns 8+ (name / color / angle / dim_alignment) are currently ignored. \
+                 See known limitation #1.",
+                row_num, col_count
+            );
+            warned_full_format = true;
+        }
 
         if col_count < 4 {
             // Before any triangle parsed → error (bad data row)
@@ -863,5 +874,40 @@ zumennum, 1
 1, inf, 5.0, 4.0\n";
         let result = parse_csv(csv);
         assert!(result.is_err(), "Infinity should be rejected by parse_finite_f64");
+    }
+
+    // ================================================================
+    // FULL format warn (C-1-Q Quick fix)
+    // 28-column CSV must still parse, TriangleRow shape unchanged, and
+    // a stderr warn fires once. We can't easily capture stderr in stable
+    // Rust tests, so we assert the observable side (parse success +
+    // existing field shape) and rely on `cargo test -- --nocapture` for
+    // manual stderr observation.
+    // ================================================================
+
+    #[test]
+    fn warns_when_full_format_columns_present() {
+        // Build a 28-column row: number=1, A=3.0, B=4.0, C=5.0, then 24 filler cols
+        let mut full_row = String::from("1,3.0,4.0,5.0");
+        for i in 4..28 {
+            full_row.push(',');
+            full_row.push_str(&i.to_string());
+        }
+        let csv = format!(
+            "koujiname,t\nrosenname,r\ngyousyaname,g\nzumennum,z\n{}\n",
+            full_row
+        );
+
+        let parsed = parse_csv(&csv).expect("28-col CSV should still parse");
+        assert_eq!(parsed.triangles.len(), 1);
+        // TriangleRow shape unchanged in Quick fix
+        let t = &parsed.triangles[0];
+        assert_eq!(t.number, 1);
+        assert!((t.length_a - 3.0).abs() < 0.001);
+        assert!((t.length_b - 4.0).abs() < 0.001);
+        assert!((t.length_c - 5.0).abs() < 0.001);
+        // col_count >= 7 path: parent_number from parts[4]="4", col_side from parts[6]="6"
+        // (just confirm fields are populated, exact numeric not the point of this test)
+        assert_eq!(t.parent_number, 4);
     }
 }
