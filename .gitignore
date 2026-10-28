@@ -8,3 +8,6 @@ flutter_web/.idea/
 flutter_web/build/
 flutter_web/web/wasm/
 crates/road-drawing-wasm/pkg/
+
+.claude/projects/
+.omc/state/
